@@ -23,6 +23,8 @@ description: Please see the README on GitHub at <https://github.com/githubuser/g
 dependencies:
   - base >= 4.7 && < 5
   - array
+  - mtl
+  - lens
 
 library:
   source-dirs: src

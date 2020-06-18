@@ -5,5 +5,5 @@
 
 We use neoformat with:
 
-- Haskell:  `stylish-haskell`
+- Haskell:  britanny
 - All other: prettier

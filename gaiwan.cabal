@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 34c5152cfcc0c052772f89ec285f8e80e1e3008e8a23c513341058c7b367c0f7
+-- hash: c83244a1300cbdc02cd6bc2843f7449813aea54ef927cb65464a886755a2fdff
 
 name:           gaiwan
 version:        0.1.0.0
@@ -38,6 +38,8 @@ library
   build-depends:
       array
     , base >=4.7 && <5
+    , lens
+    , mtl
   default-language: Haskell2010
 
 executable gaiwan-exe
@@ -51,6 +53,8 @@ executable gaiwan-exe
       array
     , base >=4.7 && <5
     , gaiwan
+    , lens
+    , mtl
   default-language: Haskell2010
 
 test-suite gaiwan-test
@@ -65,4 +69,6 @@ test-suite gaiwan-test
       array
     , base >=4.7 && <5
     , gaiwan
+    , lens
+    , mtl
   default-language: Haskell2010

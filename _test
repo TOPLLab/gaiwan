@@ -1,0 +1,11 @@
+#!/bin/sh
+cat <<HERE | stack run | clang-format -style=google
+shuffler lol(index,length){ (index + 1) % length}
+mapper haha(a,x){x + a}
+
+@generateSeq(50)
+  | lol()
+  | haha(5)
+HERE
+
+
