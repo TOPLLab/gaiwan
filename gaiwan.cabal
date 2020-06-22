@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: c83244a1300cbdc02cd6bc2843f7449813aea54ef927cb65464a886755a2fdff
+-- hash: 18ae2a847c5e7c3d22dc53b94b16f320d67c2c8d975146125bf88904604d83a8
 
 name:           gaiwan
 version:        0.1.0.0
@@ -28,16 +28,20 @@ source-repository head
 
 library
   exposed-modules:
+      Code
       Language.Gaiwan
       Language.Tokens
       Lib
+      OpenCL
   other-modules:
       Paths_gaiwan
   hs-source-dirs:
       src
   build-depends:
-      array
+      OpenCL
+    , array
     , base >=4.7 && <5
+    , containers
     , lens
     , mtl
   default-language: Haskell2010
@@ -50,8 +54,10 @@ executable gaiwan-exe
       app
   ghc-options: -threaded -rtsopts -with-rtsopts=-N -dynamic
   build-depends:
-      array
+      OpenCL
+    , array
     , base >=4.7 && <5
+    , containers
     , gaiwan
     , lens
     , mtl
@@ -66,8 +72,10 @@ test-suite gaiwan-test
       test
   ghc-options: -threaded -rtsopts -with-rtsopts=-N
   build-depends:
-      array
+      OpenCL
+    , array
     , base >=4.7 && <5
+    , containers
     , gaiwan
     , lens
     , mtl

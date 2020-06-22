@@ -40,6 +40,8 @@ packages:
 #   commit: e7b331f14bcffb8367cd58fbfc8b40ec7642100a
 #
 # extra-deps: []
+extra-deps:
+  - OpenCL-1.0.3.4@sha256:ef90f955632749353251887ce66357c5ed8e98e8b437ff91ce406ae9187f3953,2590
 
 # Override default flag values for local packages and extra-deps
 # flags: {}

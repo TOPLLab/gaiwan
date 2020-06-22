@@ -4,10 +4,13 @@ module Lib
 where
 
 import           Language.Gaiwan
+import           Code
 import           Data.List
+import qualified Data.Set                      as Set
 import           Data.Maybe
 import           System.Exit
 import           Control.Monad.State.Lazy
+import           OpenCL
 
 someFunc :: IO ()
 someFunc = getContents >>= printG . parseGaiwan
@@ -17,11 +20,13 @@ someFunc = getContents >>= printG . parseGaiwan
         putStr m
         putStr "\n"
         exitFailure
-    printG (Right m) = foldr1 (>>) $ convert m
+    printG (Right m) = convert m
 
-convert (Prog defines main) =
-    map (putStr . convertDef) defines
-        ++ [putStr $ convertMain (map kindDefs defines) main]
+convert :: Program -> IO ()
+convert (Prog defines main) = putStr $ dbgRender $ execCode $ do
+    let km = map kindDefs defines
+    mapM convertDef defines
+    convertMain (map kindDefs defines) main
 
 
 type KindsMap = [(String, [Exp] -> PipelineStep)]
@@ -30,72 +35,114 @@ kindDefs :: Stmt -> (String, [Exp] -> PipelineStep)
 kindDefs (Shuffler name _ _) = (name, PShuffle name)
 kindDefs (Mapper   name _ _) = (name, PMap name)
 
-convertDef (Shuffler name args body) =
-    "size_t function user_"
+convertDef :: Stmt -> State Code ()
+convertDef (Shuffler name args body) = do
+    kBody <- mkKernelCodeB [] body
+    addDeviceCode
+        $  "size_t function user_"
         ++ name
         ++ "("
         ++ intercalate "," (map ("arg_" ++) args)
         ++ "){"
         ++ "return "
-        ++ convertBodyB [] body
+        ++ kBody
         ++ ";}\n\n"
-convertDef (Mapper name args body) =
-    "size_t function user_"
+convertDef (Mapper name args body) = do
+    kBody <- mkKernelCodeB [] body
+    addDeviceCode
+        $  "size_t function user_"
         ++ name
         ++ "("
         ++ intercalate "," (map ("size_t arg_" ++) args)
         ++ "){"
         ++ "return "
-        ++ convertBodyB [] body
+        ++ kBody
         ++ ";}\n\n"
 
 fun_prefix True  = "int_"
 fun_prefix False = "user_"
 
-convertBody :: KindsMap -> Exp -> String
-convertBody km (Let name value body) = error "Let not yet supported!"
-convertBody km (Plus a b) = convertBodyB km a ++ "+" ++ convertBodyB km b
-convertBody km (Minus a b) = convertBodyB km a ++ "-" ++ convertBodyB km b
-convertBody km (Modulo a b) = convertBodyB km a ++ "%" ++ convertBodyB km b
-convertBody km (Times a b) = convertBodyB km a ++ "*" ++ convertBodyB km b
-convertBody km (Div a b) = convertBodyB km a ++ "/" ++ convertBodyB km b
-convertBody km (App f builtin args) =
-    fun_prefix builtin
-        ++ f
-        ++ "("
-        ++ intercalate "," (map (convertBodyB km) args)
-        ++ ")"
-convertBody km (Int num       ) = show num
-convertBody km (Var name True ) = "int_" ++ name
-convertBody km (Var name False) = "arg_" ++ name
-convertBody km (Negate x      ) = "-" ++ convertBodyB km x
-convertBody km (ArrayGet x idx) =
-    convertBodyB km x ++ "[" ++ convertBody km idx ++ "]"
-convertBody km (PipedExp expressions) =
+mkKernelBinOp km a b op = do
+    ka <- mkKernelCodeB km a
+    kb <- mkKernelCodeB km b
+    return $ ka ++ op ++ kb
+
+mkKernelCode :: KindsMap -> Exp -> State Code String
+mkKernelCode km (Let name value body) = error "Let not yet supported!"
+mkKernelCode km (Plus   a b         ) = mkKernelBinOp km a b "+"
+mkKernelCode km (Minus  a b         ) = mkKernelBinOp km a b "-"
+mkKernelCode km (Times  a b         ) = mkKernelBinOp km a b "*"
+mkKernelCode km (Div    a b         ) = mkKernelBinOp km a b "/"
+mkKernelCode km (Modulo a b         ) = mkKernelBinOp km a b "%"
+mkKernelCode km (App f builtin args ) = do
+    cArgs <- mapM (mkKernelCodeB km) args
+    return $ fun_prefix builtin ++ f ++ "(" ++ intercalate "," cArgs ++ ")"
+mkKernelCode km (Int num       ) = return $ show num
+mkKernelCode km (Var name True ) = return $ "int_" ++ name
+mkKernelCode km (Var name False) = return $ "arg_" ++ name
+mkKernelCode km (Negate x      ) = mkKernelCodeB km x >>= (return . ("-" ++))
+mkKernelCode km (ArrayGet x idx) = do
+    kx   <- mkKernelCodeB km x
+    kidx <- mkKernelCodeB km idx
+    return $ kx ++ "[" ++ kidx ++ "]"
+mkKernelCode km (PipedExp expressions) = do
     let pipe = convertPipe km expressions
-    in  intercalate "\n\n" $ map (uncurry (convertPls km)) $ zip [1..] pipe
+    mapM addHostCode $ map AllocBuffer (analyseArrays pipe)
+    mapM (convertPls km) pipe
+    mapM
+        addHostCode
+        ( map
+        ReadBuffer
+        $ outBuffer
+        $ last pipe
+        )
+    return ""
+
+outBuffer (_, o, _) = o
+
+analyseArrays :: [([GPUBuffer], [GPUBuffer], Exp)] -> [GPUBuffer]
+analyseArrays p = Set.toList $ foldl addI Set.empty p
+    where addI s (i, o, _) = foldr Set.insert s (i ++ o)
+
+--analyseArrays l = zip  (foldr ff [] l) (reverse $ foldl fr [] l)
+--    where ff :: ([GPUBuffer],[GPUBuffer], Exp) -> [[GPUBuffer]] -> [[GPUBuffer]]
+--          ff (i, o, _) prev@(p:_) = (o++p) : prev
+--          ff (i, o, _) []= [o]
+--          fr prev@(p:_) (i, o, _) = (p++i) : prev
+--          fr [] (i, o, _) = [i,[]]
+
+
 
 -- convert pipelinestep
-convertPls kv i (argIn, argOut@[GPUBuffer outName _], body) =
-    "kernel function kernelfun"++show i++"("
-        ++ (intercalate ", " $ map
-               (\(GPUBuffer name size) ->
-                   "size_t " ++ name ++ "[" ++ show size ++ "]"
-               )
-               (argIn ++ argOut)
-           )
+convertPls kv (argIn, argOut@[GPUBuffer outName s], body) = do
+    fName <- getAName "kernelfun"
+    kBody <- mkKernelCodeB kv body
+    addDeviceCode
+        $  "kernel function "
+        ++ fName
+        ++ "("
+        ++ (intercalate ", " $ map gpuBufferDecl (argIn ++ argOut))
         ++ "){ size_t int_index = get_global_id(0);"
         ++ outName
         ++ "[int_index] ="
-        ++ (convertBodyB kv body)
+        ++ kBody
         ++ ";}"
+    addHostCode $ MakeKernel fName (argIn ++ argOut) (Range s 0 0)
 
 -- Add brackets
-convertBodyB :: KindsMap -> Exp -> String
-convertBodyB km x = "(" ++ convertBody km x ++ ")"
+mkKernelCodeB :: KindsMap -> Exp -> State Code String
+mkKernelCodeB km x = do
+    v <- mkKernelCode km x
+    return $ "(" ++ v ++ ")"
 
 -- Convert main
-convertMain defs main = (convertBody defs main) ++ "\n\n"
+convertMain :: KindsMap -> Exp -> State Code ()
+convertMain defs main =
+    mkKernelCode defs main >> return ()
+
+
+
+
 
 
 -- Pipeline stuff
@@ -120,12 +167,15 @@ data PipelineStep = PShuffle String [Exp] | PMap String [Exp]
         deriving (Show)
 
 
-data GPUBuffer = GPUBuffer String Int deriving (Show)
+gpuBufferDecl (GPUBuffer name size) =
+    "size_t " ++ name ++ "[" ++ show size ++ "]"
 
 -- Convert a pipe into kernel specifications
 -- todo make datatype with in,out,exp and kernelcode
 convertPipe :: KindsMap -> [Exp] -> [([GPUBuffer], [GPUBuffer], Exp)]
-convertPipe km (h : r) = reverse $ exps $ foldl convP (convH h) (map getPipeKind r)
+convertPipe km (h : r) = reverse $ exps $ foldl convP
+                                                (convH h)
+                                                (map getPipeKind r)
   where
     -- convert first item of the pipe
     convH :: Exp -> Data
@@ -159,7 +209,7 @@ convertPipe km (h : r) = reverse $ exps $ foldl convP (convH h) (map getPipeKind
             }
     makeArrayAccess :: Int -> Exp -> Exp
     makeArrayAccess name = ArrayGet (Var ("array" ++ show name) True)
-    arrayName num = "arrary" ++ show num
+    arrayName num = "array" ++ show num
     getPipeKind :: Exp -> PipelineStep
     getPipeKind (App name False args) =
         fromMaybe (PMap "err") (lookup name km) args

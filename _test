@@ -6,6 +6,12 @@ mapper haha(a,x){x + a}
 @generateSeq(50)
   | lol()
   | haha(5)
+  | lol()
+  | haha(1)
+  | lol()
+  | haha(2)
+  | lol()
+  | haha(3)
 HERE
 
 

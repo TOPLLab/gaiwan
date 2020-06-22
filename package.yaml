@@ -25,6 +25,8 @@ dependencies:
   - array
   - mtl
   - lens
+  - containers
+  - OpenCL
 
 library:
   source-dirs: src
