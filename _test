@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/usr/bin/env sh
 cat <<HERE | stack run | clang-format -style=google
 shuffler lol(index,length){ (index + 1) % length}
 mapper haha(a,x){x + a}
