@@ -1,6 +1,6 @@
 #!/usr/bin/env sh
-cat <<HERE | stack run | clang-format -style=google
-shuffler lol(index,length){ (index + 1) % length}
+cat <<HERE | stack run
+shuffler lol(length,index){ (index + 1) % length}
 mapper haha(a,x){x + a}
 
 @generateSeq(50)

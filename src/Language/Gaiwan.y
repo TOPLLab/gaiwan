@@ -57,7 +57,7 @@ ExpBase : let var '=' Exp in Exp                            { Let $2 $4 $6      
       | '(' Exp ')'                                         { $2                              }
       | '-' Exp %prec NEG                                   { Negate $2                       }
       | int                                                 { Int $1                          }
-      | var                                                 { Var $1 True                     }
+      | avar                                                 { $1                     }
 
 Exp   : pipedExp                                            { cleanPiped (reverse $1)         }
 avar : var                                                  { Var $1 False                    }

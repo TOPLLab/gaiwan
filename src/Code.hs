@@ -5,6 +5,7 @@ module Code
     , addDeviceCode
     , addHostCode
     , dbgRender
+    , runCode
     )
 where
 import           Control.Monad.State.Lazy
@@ -14,6 +15,13 @@ data Code = Code {
     hostCode :: [OpenCLAction],
     nameCount :: Int
 } deriving (Show)
+
+runCode :: Code -> IO ()
+runCode c = do
+    oclr <- runList (mkOpenRunner (deviceCode c)) (hostCode c)
+    str <- showOpenRunner oclr
+    putStrLn str
+    return ()
 
 dbgRender :: Code -> String
 dbgRender c = show (hostCode c) ++ "\n\n" ++ deviceCode c
