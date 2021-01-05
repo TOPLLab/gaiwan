@@ -1,10 +1,10 @@
 cabal-version: 1.12
 
--- This file has been generated from package.yaml by hpack version 0.34.2.
+-- This file has been generated from package.yaml by hpack version 0.34.3.
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 18ae2a847c5e7c3d22dc53b94b16f320d67c2c8d975146125bf88904604d83a8
+-- hash: ddbb6ef23aeeba338e8c3fd3e1aaefd532ca4a0d5c569e11a8dce902a314f84e
 
 name:           gaiwan
 version:        0.1.0.0
@@ -33,6 +33,7 @@ library
       Language.Tokens
       Lib
       OpenCL
+      Pipelining
   other-modules:
       Paths_gaiwan
   hs-source-dirs:

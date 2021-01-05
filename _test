@@ -3,15 +3,8 @@ cat <<HERE | stack run
 shuffler lol(length,index){ (index + 1) % length}
 mapper haha(a,x){x + a}
 
-@generateSeq(50)
-  | lol()
-  | haha(5)
-  | lol()
-  | haha(1)
-  | lol()
-  | haha(2)
-  | lol()
-  | haha(3)
+@generateSeq ( 50 )
+  | haha(0)
+  | 10  { haha(0) | lol() | haha(-1) }
+  | haha(0)
 HERE
-
-

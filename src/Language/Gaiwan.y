@@ -43,32 +43,37 @@ import           Language.Tokens
 
 Program : stmtList Exp                                      { Prog (reverse $1) $2            }
 
-Stmt  :  function var '(' varlist ')' bracO Exp bracC       { mkFun $1 $2  (reverse $4) $7    }
-      |  function var '('         ')' bracO Exp bracC       { mkFun $1 $2  [] $6              }
+Stmt  :  function var '(' varlist ')' bracO ExpBase bracC       { mkFun $1 $2  (reverse $4) $7    }
+      |  function var '('         ')' bracO ExpBase bracC       { mkFun $1 $2  [] $6              }
 
-ExpBase : let var '=' Exp in Exp                            { Let $2 $4 $6                    }
-      | avar '(' explist ')'                            { mkApp $1 (reverse $3)             }
-      | avar '(' ')'                                    { mkApp $1 []                       }
+ExpKinds : ExpApp { $1 } | ExpLoop { $1 }
+
+ExpApp : avar '(' explist ')'                            { mkApp $1 (reverse $3)             }
+       | avar '(' ')'                                    { mkApp $1 []                       }
+
+ExpBase : ExpApp                                            { $1 }
       | ExpBase '%' ExpBase                                 { Modulo $1 $3                    }
       | ExpBase '+' ExpBase                                 { Plus $1 $3                      }
       | ExpBase '-' ExpBase                                 { Minus $1 $3                     }
       | ExpBase '*' ExpBase                                 { Times $1 $3                     }
       | ExpBase '/' ExpBase                                 { Div $1 $3                       }
-      | '(' Exp ')'                                         { $2                              }
-      | '-' Exp %prec NEG                                   { Negate $2                       }
+      | '(' ExpBase ')'                                         { $2                              }
+      | '-' ExpBase %prec NEG                                   { Negate $2                       }
       | int                                                 { Int $1                          }
       | avar                                                 { $1                     }
+
+ExpLoop : int bracO pipedExp bracC                          { Loop $1 $3 }
 
 Exp   : pipedExp                                            { cleanPiped (reverse $1)         }
 avar : var                                                  { Var $1 False                    }
      | builtinvar                                           { Var $1 True                     }
 
-pipedExp : ExpBase                                          { [$1]                            }
-         | pipedExp pipe ExpBase %prec PIPE                 { $3 : $1                         }
+pipedExp : ExpKinds                                         { [$1]                            }
+         | pipedExp pipe ExpKinds %prec PIPE                 { $3 : $1                         }
 varlist : var                                               { [$1]                            }
         | varlist ',' var                                   { $3 : $1                         }
-explist : Exp                                               { [$1]                            }
-        | explist ',' Exp                                   { $3 : $1                         }
+explist : ExpBase                                               { [$1]                            }
+        | explist ',' ExpBase                                   { $3 : $1                         }
 stmtList :                                                  { []                              }
          | stmtList Stmt                                    { $2 : $1                         }
 {
@@ -80,7 +85,7 @@ data Stmt
       = Mapper String [String] Exp
       | Shuffler String [String] Exp
       deriving Show
-
+-- | let var '=' Exp in Exp                              { Let $2 $4 $6                    }
 data Exp
       = Let String Exp Exp
       | Plus Exp Exp
@@ -94,6 +99,7 @@ data Exp
       | Negate Exp
       | PipedExp [Exp]
       | ArrayGet Exp Exp
+      | Loop Int [Exp]
       deriving Show
 
 -- Simplify a list of piped expression (remove pipe if only one)
