@@ -51,6 +51,7 @@ emptyCode =
       nameCount = 0,
       defs = [],
       kernels = []
+      -- mkCode should be here
     }
 
 execCode :: SCode a -> Code
@@ -90,8 +91,8 @@ addDeviceCode s =
     )
 
 -- Adds a kernel and retrns the name
-addDeviceKernel :: Exp -> [GPUBuffer] -> [GPUBuffer] -> String -> SCode KernelName
-addDeviceKernel exp buffers buffersout code = do
+addDeviceKernel :: (Exp -> SCode String) -> Exp -> [GPUBuffer] -> [GPUBuffer] -> SCode KernelName
+addDeviceKernel mkCode exp buffers buffersout = do
   ks <- kernels <$> get
   maybe realyAddKernel return $ lookup ks
   where
@@ -104,6 +105,7 @@ addDeviceKernel exp buffers buffersout code = do
     realyAddKernel :: SCode KernelName
     realyAddKernel = do
       name <- getAName "kernel"
+      code <- mkCode exp
       let KernelName strName = name
       addDeviceCode $
         "void kernel "

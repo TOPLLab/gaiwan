@@ -178,9 +178,8 @@ convertPls mkKernelCode exps = do
   mapM_ (addHostCode . ReadBuffer) (_outBuf $ last plSteps)
   where
     convert x = do
-      kBody <- mkKernelCode (_expValue x)
       let argBufs = (x ^. inBuf) ++ (x ^. outBuf)
-      fName <- addDeviceKernel (_expValue x) argBufs (x ^. outBuf) kBody
+      fName <- addDeviceKernel mkKernelCode (_expValue x) argBufs (x ^. outBuf)
       addKernelCall fName argBufs (Range (gpuBufferSize $ last argBufs) 0 0)
       return ()
 
