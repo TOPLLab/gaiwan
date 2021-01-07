@@ -100,7 +100,7 @@ data Exp
       | PipedExp [Exp]
       | ArrayGet Exp Exp
       | Loop Int [Exp]
-      deriving Show
+      deriving (Show, Eq)
 
 -- Simplify a list of piped expression (remove pipe if only one)
 cleanPiped [x] = x

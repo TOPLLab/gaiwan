@@ -178,19 +178,9 @@ convertPls mkKernelCode exps = do
   mapM_ (addHostCode . ReadBuffer) (_outBuf $ last plSteps)
   where
     convert x = do
-      fName <- getAName "kernelfun"
       kBody <- mkKernelCode (_expValue x)
       let argBufs = (x ^. inBuf) ++ (x ^. outBuf)
-      addDeviceCode $
-        "void kernel "
-          ++ fName
-          ++ "("
-          ++ intercalate ", " (map gpuBufferDecl argBufs)
-          ++ "){ int int_index = get_global_id(0);"
-          ++ intercalate ";" (map (\buffer@(GPUBuffer outname _) -> "int_" ++ outname ++ "[int_index] = " ++ kBody) (x ^. outBuf))
-          ++ ";};"
-      addHostCode $ MakeKernel fName argBufs (Range (gpuBufferSize $ last argBufs) 0 0)
+      fName <- addDeviceKernel (_expValue x) argBufs (x ^. outBuf) kBody
+      addKernelCall fName argBufs (Range (gpuBufferSize $ last argBufs) 0 0)
       return ()
 
-gpuBufferDecl (GPUBuffer name size) =
-  "global int int_" ++ name ++ "[" ++ show size ++ "]"

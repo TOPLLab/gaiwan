@@ -9,7 +9,7 @@ import Data.List
 import Data.Maybe
 import Debug.Trace
 import Language.Gaiwan
-import OpenCL
+-- import OpenCL
 import Pipelining
 import System.Exit
 
@@ -95,10 +95,7 @@ mkKernelCode (ArrayGet x idx) = do
   kidx <- mkKernelCodeB idx
   return $ kx ++ "[" ++ kidx ++ "]"
 mkKernelCode (PipedExp expressions) = do
-  -- pipe <- convertPipe expressions
-  -- mapM_ (addHostCode . AllocBuffer) (analyseArrays pipe)
   convertPls mkKernelCodeB expressions
-  --mapM_ (addHostCode . ReadBuffer) (_outBuf $ last pipe)
   return ""
 
 -- Add brackets
