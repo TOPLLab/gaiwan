@@ -1,10 +1,9 @@
 module OpenCL
   ( OpenCLAction (..),
-    GPUBuffer (..),
+    CLGPUBuffer (..),
     Range (..),
     OpenCLRunner,
     mkOpenRunner,
-    gpuBufferSize,
     runList,
     showOpenRunner,
   )
@@ -17,15 +16,14 @@ import Foreign
 import Foreign.C
 import System.Exit
 
-data GPUBuffer = GPUBuffer String Int deriving (Show, Eq, Ord)
-gpuBufferSize (GPUBuffer _ s) = s
+data CLGPUBuffer = CLGPUBuffer Int Int deriving (Show, Eq, Ord)
 
 data Range = Range Int Int Int deriving (Show)
 
 data OpenCLAction
-  = MakeKernel String [GPUBuffer] Range
-  | AllocBuffer GPUBuffer
-  | ReadBuffer GPUBuffer
+  = MakeKernel String [CLGPUBuffer] Range
+  | AllocBuffer CLGPUBuffer
+  | ReadBuffer CLGPUBuffer
   deriving (Show)
 
 data OpenCLRunner = OpenCLRunner (OpenCLAction -> IO OpenCLRunner) (Maybe (([CInt] -> String) -> IO String))
@@ -54,7 +52,7 @@ mkOpenRunner programSource = do
         putStrLn log
         exitFailure -- TODO: get rid of this
     )
-  return $ OpenCLRunner (runAction context q program [] []) (Nothing)
+  return $ OpenCLRunner (runAction context q program [] []) Nothing
 
 showOpenRunner :: OpenCLRunner -> IO String
 showOpenRunner (OpenCLRunner _ (Just ptr)) = ptr show
@@ -68,7 +66,7 @@ runList ioclr (a : r) = do
   print a
   runList (f a) r
 
-runAction :: CLContext -> CLCommandQueue -> CLProgram -> [(GPUBuffer, CLMem)] -> [CLEvent] -> OpenCLAction -> IO OpenCLRunner
+runAction :: CLContext -> CLCommandQueue -> CLProgram -> [(CLGPUBuffer, CLMem)] -> [CLEvent] -> OpenCLAction -> IO OpenCLRunner
 runAction c q p g waitFor (MakeKernel name args range) = do
   print waitFor
   kernel <- clCreateKernel p name
@@ -77,20 +75,20 @@ runAction c q p g waitFor (MakeKernel name args range) = do
   return $ OpenCLRunner (runAction c q p g [evt]) Nothing
   where
     getBuf n = fromMaybe (error $ "Could not find buffer " ++ show n) (lookup n g)
-runAction c q p g waitFor (AllocBuffer gpub@(GPUBuffer _ size)) = do
+runAction c q p g waitFor (AllocBuffer gpub@(CLGPUBuffer _ size)) = do
   let elemSize = sizeOf (0 :: CInt)
       vecSize = elemSize * size
   print waitFor
   mem_in <- clCreateBuffer c [CL_MEM_READ_WRITE] (vecSize, nullPtr)
   return $ OpenCLRunner (runAction c q p ((gpub, mem_in) : g) waitFor) Nothing
-runAction c q p g waitFor (ReadBuffer gpub@(GPUBuffer _ size)) = do
-  putStrLn $ show waitFor
+runAction c q p g waitFor (ReadBuffer gpub@(CLGPUBuffer _ size)) = do
+  print waitFor
   let elemSize = sizeOf (0 :: CInt)
       vecSize = elemSize * size
   input <- mallocArray size :: IO (Ptr CInt)
-  let (Just cbuf) = (lookup gpub g)
-  putStrLn $ show cbuf
-  putStrLn $ show vecSize
+  let (Just cbuf) = lookup gpub g
+  print cbuf
+  print vecSize
   evt <- clEnqueueReadBuffer q cbuf True 0 vecSize (castPtr input) waitFor
   return $
     OpenCLRunner (runAction c q p g [evt]) $

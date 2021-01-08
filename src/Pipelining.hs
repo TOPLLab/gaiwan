@@ -8,7 +8,6 @@ import Control.Lens
 import Data.List
 import qualified Data.Set as Set
 import Language.Gaiwan
-import OpenCL
 
 data PipelineStep = PipelineStep
   { _inBuf :: [GPUBuffer],
@@ -21,7 +20,6 @@ makeLenses ''PipelineStep
 
 data Pipeline = Pipeline
   { _shuffle :: Exp,
-    _requiredArrays :: Int, -- for uniq names
     _lastMap :: Bool, -- if the previous step was a map
     _curExp :: PipelineStep, -- TODO: should be a LIST
     _doneExps :: [PipelineStep],
@@ -33,11 +31,11 @@ makeLenses ''Pipeline
 
 -- Normalise the Exp (always use array0, array1, ...)
 convertPipe :: [Exp] -> SCode [PipelineStep]
-convertPipe (h : r) = reverse . dataToList <$> foldl convP (return $ convH h) r
+convertPipe (h : r) = reverse . dataToList <$> foldl convP (convH h) r
   where
     -- convert first item of the pipe
-    convH :: Exp -> Pipeline
-    convH (App "generateSeq" True [Int n]) = emptyData "array0" n
+    convH :: Exp -> SCode Pipeline
+    convH (App "generateSeq" True [Int n]) = emptyData <$> freshGPUBuffer n
     convH _ = error "Unknown start sequence"
 
     -- converts subsequent steps
@@ -47,11 +45,8 @@ convertPipe (h : r) = reverse . dataToList <$> foldl convP (return $ convH h) r
     convP x a@(App n _ _) = do
       t <- lookupDef n
       y <- x
-      -- return $ (\r -> trace ("\n\n----------" ++ show a ++ "----------\n\n" ++ show r ++ "\n\n") r) $
-
-      -- todo make less ugly
-      return $ case t of
-        Just Shuffler {} -> convPShuffler y a
+      case t of
+        Just Shuffler {} -> return $ convPShuffler y a
         Just Mapper {} -> convPMapper y a
         _ -> error $ "Unknown name " ++ show n
     -- A shuffle is stored in a variable for later reference, when we actually need it.
@@ -68,23 +63,22 @@ convertPipe (h : r) = reverse . dataToList <$> foldl convP (return $ convH h) r
     convPLoop :: SCode Pipeline -> Exp -> SCode Pipeline
     convPLoop y (Loop n steps) = do
       x <- y
-      let bufferToCopy = zipWith (\(GPUBuffer _ len) idx -> GPUBuffer (arrayName idx) len) (x ^. (curExp . outBuf)) [(x ^. requiredArrays + 1) ..]
+      bufferToCopy <- mapM (\(GPUBuffer _ s) -> freshGPUBuffer s) (x ^. (curExp . outBuf))
       -- fresh buffers to work with
-      let loopBuffer = [GPUBuffer (arrayName $ (x ^. requiredArrays) + 1 + length bufferToCopy) (x ^. curSize)]
+      loopBuffer <- mapM freshGPUBuffer [x ^. curSize]
       loopBody <-
         foldl
           convP
           ( return $
               Pipeline
                 { _shuffle = indexVar,
-                  _requiredArrays = (x ^. requiredArrays) + 1 + length bufferToCopy,
                   _lastMap = True,
                   _curExp -- copyExp bufferToCopy loopBuffer
                   =
                     PipelineStep
                       { _inBuf = bufferToCopy, -- A copy of the out of the previous step (copy done below)
                         _outBuf = loopBuffer, -- Out is new buffer
-                        _expValue = makeGPUBufAccess (head bufferToCopy) indexVar -- expression is simple array access with map applied to shuffled data (moet eigenlijk een map zijn ofzo)
+                        _expValue = gpuBufferGet (head bufferToCopy) indexVar -- expression is simple array access with map applied to shuffled data (moet eigenlijk een map zijn ofzo)
                       },
                   _doneExps = [],
                   _curSize = x ^. curSize
@@ -95,7 +89,6 @@ convertPipe (h : r) = reverse . dataToList <$> foldl convP (return $ convH h) r
       return $
         x -- Moet dezelfde buffer zijn he, want het is een loop
           & shuffle .~ indexVar
-          & requiredArrays .~ ((loopBody ^. requiredArrays) + 1)
           & lastMap .~ False
           & curExp .~ head loopExpFull
           & doneExps
@@ -108,33 +101,34 @@ convertPipe (h : r) = reverse . dataToList <$> foldl convP (return $ convH h) r
                )
           & lastMap .~ True
     -- A map if the last was also a map can be combined
-    convPMapper :: Pipeline -> Exp -> Pipeline
+    convPMapper :: Pipeline -> Exp -> SCode Pipeline
     convPMapper x@Pipeline {_lastMap = True} (App n _ args) =
-      x
-        & lastMap .~ True
-        & (curExp . expValue) .~ App n False (args ++ [x ^. (curExp . expValue)])
-    convPMapper x@Pipeline {_lastMap = False} (App n _ args) =
-      x
-        & curExp
-          .~ PipelineStep
-            { _inBuf = x ^. (curExp . outBuf), --in of next is out of prev
-              _outBuf = [GPUBuffer (arrayName $ (x ^. requiredArrays) + 1) (x ^. curSize)], -- Out is new buffer
-              _expValue = App n False $ makeGPUBufAccess (head $ x ^. (curExp . outBuf)) (x ^. shuffle) : args -- expression is simple array access with map applied to shuffled data
-            }
-        & doneExps %~ ((x ^. curExp) :) -- prepend the old curExp
-        & shuffle .~ indexVar
-        & lastMap .~ True
-        & requiredArrays %~ (1 +)
+      return $
+        x
+          & lastMap .~ True
+          & (curExp . expValue) .~ App n False (args ++ [x ^. (curExp . expValue)])
+    convPMapper x@Pipeline {_lastMap = False} (App n _ args) = do
+      freshBuffer <- freshGPUBuffer (x ^. curSize)
+      return $
+        x
+          & curExp
+            .~ PipelineStep
+              { _inBuf = x ^. (curExp . outBuf), --in of next is out of prev
+                _outBuf = [freshBuffer], -- Out is new buffer
+                _expValue = App n False $ gpuBufferGet (head $ x ^. (curExp . outBuf)) (x ^. shuffle) : args -- expression is simple array access with map applied to shuffled data
+              }
+          & doneExps %~ ((x ^. curExp) :) -- prepend the old curExp
+          & shuffle .~ indexVar
+          & lastMap .~ True
 
-emptyData arrayname size =
+emptyData buffer@(GPUBuffer _ size) =
   Pipeline
     { _shuffle = indexVar,
-      _requiredArrays = 0,
       _lastMap = True,
       _curExp =
         PipelineStep
           { _inBuf = [],
-            _outBuf = [GPUBuffer arrayname size],
+            _outBuf = [buffer],
             _expValue = indexVar -- default value is just the index (there is no inBuf to read from)
           },
       _doneExps = [],
@@ -146,7 +140,7 @@ copyBufExp inBuf outBuf =
   PipelineStep
     { _inBuf = inBuf, -- A copy of the out of the previous step (copy done below)
       _outBuf = outBuf, -- Same sized output buffers
-      _expValue = makeGPUBufAccess (head inBuf) indexVar -- expression is simple array access with map applied to shuffled data
+      _expValue = gpuBufferGet (head inBuf) indexVar -- expression is simple array access with map applied to shuffled data
     }
 
 -- Convert a pipeline data into a list of Pipeline steps
@@ -163,9 +157,6 @@ analyseArrays p = Set.toList $ foldl addI Set.empty p
 -- Convert a pipe into kernel specifications
 -- We build a Pipeline and
 
-makeGPUBufAccess :: GPUBuffer -> Exp -> Exp
-makeGPUBufAccess (GPUBuffer name _) = ArrayGet (Var name True)
-
 arrayName num = "array" ++ show num
 
 indexVar = Var "index" True
@@ -180,6 +171,5 @@ convertPls mkKernelCode exps = do
     convert x = do
       let argBufs = (x ^. inBuf) ++ (x ^. outBuf)
       fName <- addDeviceKernel mkKernelCode (_expValue x) argBufs (x ^. outBuf)
-      addKernelCall fName argBufs (Range (gpuBufferSize $ last argBufs) 0 0)
+      addHostCode $ CallKernel fName argBufs (gpuBufferSize $ last argBufs)
       return ()
-

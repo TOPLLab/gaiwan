@@ -1,15 +1,19 @@
 module Code
   ( SCode,
     KernelName (),
+    GPUAction (..),
+    GPUBuffer (..),
     addDeviceCode,
     addDeviceKernel,
-    addKernelCall,
     addHostCode,
+    gpuBufferGet,
     dbgRender,
     execCode,
     lookupDef,
     registerDef,
+    freshGPUBuffer,
     runCode,
+    gpuBufferSize,
   )
 where
 
@@ -19,12 +23,25 @@ import Data.List
 import Language.Gaiwan
 import OpenCL
 
+newtype GPUBufferName = GPUBufferName Int deriving (Show, Ord, Eq)
+
+data GPUBuffer = GPUBuffer GPUBufferName Int deriving (Show, Eq, Ord)
+
+gpuBufferSize (GPUBuffer _ s) = s
+
+data GPUAction
+  = CallKernel KernelName [GPUBuffer] Int -- name args threads
+  | AllocBuffer GPUBuffer
+  | ReadBuffer GPUBuffer
+  deriving (Show)
+
 data Code = Code
   { deviceCode :: String,
-    hostCode :: [OpenCLAction],
+    hostCode :: [GPUAction],
     nameCount :: Int,
     defs :: [Stmt],
-    kernels :: [((Exp, [GPUBuffer], [GPUBuffer]), KernelName)] -- Put kernels here
+    kernels :: [((Exp, [GPUBuffer], [GPUBuffer]), KernelName)], -- Put kernels herem
+    bufferCount :: Int
   }
   deriving (Show)
 
@@ -32,11 +49,16 @@ type SCode a = State Code a
 
 newtype KernelName = KernelName String deriving (Show)
 
-kernelName (KernelName n) = n
+toOpenCL :: GPUAction -> OpenCLAction
+toOpenCL (CallKernel (KernelName n) args threads) = MakeKernel n (map toOpenCLBuf args) (Range threads 0 0)
+toOpenCL (Code.AllocBuffer x) = OpenCL.AllocBuffer (toOpenCLBuf x)
+toOpenCL (Code.ReadBuffer x) = OpenCL.ReadBuffer (toOpenCLBuf x)
+
+toOpenCLBuf (GPUBuffer (GPUBufferName i) size) = CLGPUBuffer i size
 
 runCode :: Code -> IO ()
 runCode c = do
-  oclr <- runList (mkOpenRunner (deviceCode c)) (hostCode c)
+  oclr <- runList (mkOpenRunner (deviceCode c)) (map toOpenCL $ hostCode c)
   str <- showOpenRunner oclr
   putStrLn str
   return ()
@@ -50,18 +72,29 @@ emptyCode =
       hostCode = [],
       nameCount = 0,
       defs = [],
-      kernels = []
-      -- mkCode should be here
+      kernels = [],
+      bufferCount = 0 -- mkCode should be here
     }
 
 execCode :: SCode a -> Code
 execCode s = execState s emptyCode
 
-getAName :: String -> State Code KernelName
-getAName prefix = do
+freshGPUBuffer :: Int -> SCode GPUBuffer
+freshGPUBuffer size = do
+  name <- freshGPUBufferName
+  return $ GPUBuffer name size
+
+freshGPUBufferName :: SCode GPUBufferName
+freshGPUBufferName = do
+  old@Code {bufferCount = nc} <- get
+  put old {bufferCount = nc + 1}
+  return $ GPUBufferName nc
+
+freshKernelName :: State Code KernelName
+freshKernelName = do
   old@Code {nameCount = nc} <- get
   put old {nameCount = nc + 1}
-  return $ KernelName $ prefix ++ show nc
+  return $ KernelName $ "kernel" ++ show nc
 
 registerDef :: Stmt -> SCode ()
 registerDef s = modify (\old@Code {defs = d} -> old {defs = s : d})
@@ -77,7 +110,7 @@ defName (Mapper name _ _) = name
 defName (Shuffler name _ _) = name
 
 -- todo: add opencl calls
-addHostCode :: OpenCLAction -> SCode ()
+addHostCode :: GPUAction -> SCode ()
 addHostCode s =
   modify
     ( \old@Code {hostCode = dc} -> old {hostCode = dc ++ [s]}
@@ -104,19 +137,19 @@ addDeviceKernel mkCode exp buffers buffersout = do
     matches e = (exp, buffers, buffersout) == e -- todo make ignore names
     realyAddKernel :: SCode KernelName
     realyAddKernel = do
-      name <- getAName "kernel"
+      name <- freshKernelName
       code <- mkCode exp
-      let KernelName strName = name
       addDeviceCode $
-        "void kernel "
-          ++ strName
-          ++ "("
-          ++ intercalate ", " (map gpuBufferDecl buffers)
-          ++ "){ int int_index = get_global_id(0);"
-          ++ intercalate ";" (map (\buffer@(GPUBuffer outname _) -> "int_" ++ outname ++ "[int_index] = " ++ code) buffersout)
-          ++ ";};"
+        mkKernelShell name buffers $
+          " int int_index = get_global_id(0);"
+            ++ intercalate "" (map (\buffer -> gpuBufferAssign buffer "int_index" code) buffersout)
       registerKernel exp buffers buffersout name -- remember for next time
       return name
+
+mkKernelShell :: KernelName -> [GPUBuffer] -> String -> String
+mkKernelShell (KernelName name) args code = "void kernel " ++ name ++ "(" ++ argsStr ++ ")" ++ "{ " ++ code ++ " };"
+  where
+    argsStr = intercalate ", " (map gpuBufferDecl args)
 
 registerKernel :: Exp -> [GPUBuffer] -> [GPUBuffer] -> KernelName -> SCode ()
 registerKernel exp buffers buffersout name =
@@ -124,9 +157,14 @@ registerKernel exp buffers buffersout name =
     ( \old@Code {kernels = ks} -> old {kernels = ((exp, buffers, buffersout), name) : ks}
     )
 
-gpuBufferDecl (GPUBuffer name size) =
-  "global int int_" ++ name ++ "[" ++ show size ++ "]"
+gpuBufferDecl gpub@(GPUBuffer _ size) =
+  "global int " ++ gpuBufferArgName gpub ++ "[" ++ show size ++ "]"
 
--- TODO: clean
-addKernelCall :: KernelName -> [GPUBuffer] -> Range -> SCode ()
-addKernelCall = ((addHostCode .) .) . MakeKernel . kernelName
+gpuBufferAssign :: GPUBuffer -> String -> String -> String
+gpuBufferAssign buffer index value = gpuBufferArgName buffer ++ "[" ++ index ++ "] = " ++ value ++ ";"
+
+-- TODO make the stuff below nicer
+gpuBufferGet :: GPUBuffer -> Exp -> Exp
+gpuBufferGet (GPUBuffer (GPUBufferName name) _) = ArrayGet (Var ("array" ++ show name) True)
+
+gpuBufferArgName (GPUBuffer (GPUBufferName name) _) = "int_array" ++ show name
