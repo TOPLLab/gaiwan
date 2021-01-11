@@ -8,6 +8,7 @@ import Control.Lens
 import Data.List
 import qualified Data.Set as Set
 import Language.Gaiwan
+import Debug.Trace
 
 data PipelineStep = PipelineStep
   { _inBuf :: [GPUBuffer],
@@ -29,6 +30,27 @@ data Pipeline = Pipeline
 
 makeLenses ''Pipeline
 
+-- Substiute a for b in c
+subst :: Exp -> Exp -> Exp -> Exp
+subst a b c | a == c = b
+subst (Var a _) b l@(Loop int varname exps) | a == varname = l
+subst a@(Var _ _) b c = _subst c
+  where -- cases below are the non-special cases
+    _subst (Let string exp exp2) = undefined
+    _subst (Plus x y) = Plus (recCall a) (recCall b)
+    _subst (Minus x y) = Minus (recCall a) (recCall b)
+    _subst (App name t args) = App name t (map recCall args)
+    _subst (Modulo x y) = Modulo (recCall x) (recCall y)
+    _subst (Times x y) = Times (recCall x) (recCall y)
+    _subst (Div x y) = Div (recCall x) (recCall y)
+    _subst v@Int {} = v
+    _subst v@Var {} = v -- actual replacement done in 2nd clause
+    _subst (Negate exp) = Negate (recCall exp)
+    _subst (PipedExp exps) = PipedExp (map _subst exps)
+    _subst (ArrayGet exp idx) = ArrayGet (recCall exp) (recCall idx)
+    _subst (Loop cnt varname exps) = Loop cnt varname (map recCall exps)
+    recCall = subst a b
+
 -- Normalise the Exp (always use array0, array1, ...)
 convertPipe :: [Exp] -> SCode [PipelineStep]
 convertPipe (h : r) = reverse . dataToList <$> foldl convP (convH h) r
@@ -41,7 +63,7 @@ convertPipe (h : r) = reverse . dataToList <$> foldl convP (convH h) r
     -- converts subsequent steps
     -- (we need the SCode State monad to translate names into calls to the right kind of steps)
     convP :: SCode Pipeline -> Exp -> SCode Pipeline
-    convP x a@(Loop _ _) = convPLoop x a
+    convP x a@Loop {} = convPLoop x a
     convP x a@(App n _ _) = do
       t <- lookupDef n
       y <- x
@@ -61,7 +83,7 @@ convertPipe (h : r) = reverse . dataToList <$> foldl convP (convH h) r
           .~ App n False (Int (x ^. curSize) : ((x ^. shuffle) : otherArgs))
     -- A loop begins and ends with a stored array (for simplicity atm)
     convPLoop :: SCode Pipeline -> Exp -> SCode Pipeline
-    convPLoop y (Loop n steps) = do
+    convPLoop y (Loop n itterName steps) = do
       x <- y
       bufferToCopy <- mapM (\(GPUBuffer _ s) -> freshGPUBuffer s) (x ^. (curExp . outBuf))
       -- fresh buffers to work with
@@ -85,9 +107,10 @@ convertPipe (h : r) = reverse . dataToList <$> foldl convP (convH h) r
                 }
           )
           steps
-      let loopExpFull = concat $ replicate n $ copyBufExp (loopBody ^. (curExp . outBuf)) bufferToCopy : dataToList loopBody
+      let loopIterExp = copyBufExp (loopBody ^. (curExp . outBuf)) bufferToCopy : dataToList loopBody
+      let loopExpFull = concatMap (\it -> map (over expValue $ subst (Var itterName False) (Int it)) loopIterExp) [0..(n-1)]
       return $
-        x -- Moet dezelfde buffer zijn he, want het is een loop
+        x
           & shuffle .~ indexVar
           & lastMap .~ False
           & curExp .~ head loopExpFull

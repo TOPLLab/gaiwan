@@ -5,6 +5,6 @@ mapper haha(a,x){x + a}
 
 @generateSeq ( 50 )
   | haha(0)
-  | 10 { haha(0) | lol() | haha(-1) }
+  | 10:i { haha(i) | lol() | haha(-1) }
   | haha(0)
 HERE

@@ -1,0 +1,4 @@
+#!/usr/bin/env sh
+sed -i '/^.\{5,\}}$/{s/\s\{3,\}{/                                                                                              {/;s/^\(.\{60\}\)\s\+{/\1{/;s/ *}$/ }/}' src/**/*.y
+
+#TODO: add haskell formatiing (currently done with haskell language tools)
