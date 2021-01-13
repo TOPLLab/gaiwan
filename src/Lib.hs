@@ -9,9 +9,16 @@ import Data.List
 import Data.Maybe
 import Debug.Trace
 import Language.Gaiwan
+import Language.GaiwanDefs
 -- import OpenCL
 import Pipelining
 import System.Exit
+
+traceThis :: (Show a) => a -> a
+traceThis a = trace (show a) a
+
+traceThisNote :: (Show a) => String -> a -> a
+traceThisNote note a = trace (note ++ ":" ++ show a) a
 
 someFunc = someFunc2
 
@@ -39,34 +46,9 @@ convert :: Program -> IO ()
 convert (Prog defines main) =
   runCode $
     execCode $ do
-      mapM_ convertDef defines
+      mapM_ registerDef defines
       convertMain main
 
-convertDef :: Stmt -> SCode ()
-convertDef def@(Shuffler name args body) = do
-  kBody <- mkKernelCodeB body
-  registerDef def
-  addDeviceCode $
-    "int user_"
-      ++ name
-      ++ "("
-      ++ intercalate "," (map ("int arg_" ++) args)
-      ++ "){"
-      ++ "return "
-      ++ kBody
-      ++ ";};\n\n"
-convertDef def@(Mapper name args body) = do
-  kBody <- mkKernelCodeB body
-  registerDef def
-  addDeviceCode $
-    "int user_"
-      ++ name
-      ++ "("
-      ++ intercalate "," (map ("int arg_" ++) args)
-      ++ "){"
-      ++ "return "
-      ++ kBody
-      ++ ";};\n\n"
 
 funPrefix True = "int_"
 funPrefix False = "user_"
@@ -78,14 +60,27 @@ mkKernelBinOp a b op = do
 
 mkKernelCode :: Exp -> SCode String
 mkKernelCode Let {} = error "Let not yet supported!"
+mkKernelCode (Plus (Int a) (Int b)) = mkKernelCodeB (Int (a + b))
+mkKernelCode (Plus (Int 0) b) = mkKernelCodeB b
+mkKernelCode (Plus b (Int 0)) = mkKernelCodeB b
 mkKernelCode (Plus a b) = mkKernelBinOp a b "+"
 mkKernelCode (Minus a b) = mkKernelBinOp a b "-"
 mkKernelCode (Times a b) = mkKernelBinOp a b "*"
 mkKernelCode (Div a b) = mkKernelBinOp a b "/"
 mkKernelCode (Modulo a b) = mkKernelBinOp a b "%"
 mkKernelCode (App f builtin args) = do
-  cArgs <- mapM mkKernelCodeB args
-  return $ funPrefix builtin ++ f ++ "(" ++ intercalate "," cArgs ++ ")"
+  callKind <- lookupDef f
+  case callKind of
+    Just stmta ->
+      stmt
+        stmta
+        ( \_ argNames bodys ->
+            mkKernelCodeB $
+              foldl
+                (\acc (argname, argval) -> subst (Var argname False) argval acc) -- TODO: this is wrong use proper substitution
+                (head bodys)
+                (zip argNames args)
+        )
 mkKernelCode (Int num) = return $ show num
 mkKernelCode (Var name True) = return $ "int_" ++ name
 mkKernelCode (Var name False) = return $ "arg_" ++ name

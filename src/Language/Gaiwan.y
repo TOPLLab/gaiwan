@@ -3,6 +3,7 @@ module Language.Gaiwan (parseGaiwan, Exp(..), Stmt(..), Program(..)) where
 import           Data.Char
 import           Data.List
 import           Language.Tokens
+import           Language.GaiwanDefs
 }
 %name gaiwanParse
 %tokentype { Token }
@@ -19,6 +20,7 @@ import           Language.Tokens
       builtinvar                                            { TokenBuildinVar $$   _ }
       '='                                                   { TokenSym '='  _ }
       ':'                                                   { TokenSym ':'  _ }
+      ';'                                                   { TokenSym ';'  _ }
       '+'                                                   { TokenSym '+'  _ }
       '-'                                                   { TokenSym '-'  _ }
       '*'                                                   { TokenSym '*'  _ }
@@ -43,14 +45,18 @@ import           Language.Tokens
 
 Program : stmtList Exp                                      { Prog (reverse $1) $2 }
 
-Stmt  :  function var '(' varlist ')' bracO ExpBase bracC   { mkFun $1 $2  (reverse $4) $7 }
-      |  function var '('         ')' bracO ExpBase bracC   { mkFun $1 $2  [] $6 }
+Stmt  :  function var '(' varlist ')' bracO ExpBaseL bracC  { mkFun $1 $2  (reverse $4) (reverse $7) }
+      |  function var '('         ')' bracO ExpBaseL bracC  { mkFun $1 $2  [] (reverse $6) }
 
 ExpKinds : ExpApp                                           { $1 }
          | ExpLoop                                          { $1 }
 
 ExpApp : avar '(' explist ')'                               { mkApp $1 (reverse $3) }
        | avar '(' ')'                                       { mkApp $1 [] }
+
+
+ExpBaseL : ExpBase                                          { [$1] }
+         | ExpBaseL ';' ExpBase %prec PIPE                  { $3:$1 }
 
 ExpBase : ExpApp                                            { $1 }
         | ExpBase '%' ExpBase                               { Modulo $1 $3 }
@@ -82,30 +88,7 @@ explist : ExpBase                                           { [$1] }
 stmtList :                                                  { [] }
          | stmtList Stmt                                    { $2 : $1 }
 {
-data Program
-      = Prog [Stmt] Exp
-      deriving Show
-
-data Stmt
-      = Mapper String [String] Exp
-      | Shuffler String [String] Exp
-      deriving Show
 -- | let var '=' Exp in Exp                                 { Let $2 $4 $6 }
-data Exp
-      = Let String Exp Exp
-      | Plus Exp Exp
-      | Minus Exp Exp
-      | App String Bool [Exp]
-      | Modulo Exp Exp
-      | Times Exp Exp
-      | Div Exp Exp
-      | Int Int
-      | Var String Bool
-      | Negate Exp
-      | PipedExp [Exp]
-      | ArrayGet Exp Exp
-      | Loop Int String [Exp]
-      deriving (Show, Eq)
 
 -- Simplify a list of piped expression (remove pipe if only one)
 cleanPiped [x] = x
@@ -113,9 +96,9 @@ cleanPiped x   = PipedExp x
 
 mkApp (Var name builtin) = App name builtin
 
-mkFun :: FunctionType -> String -> [String] -> Exp -> Stmt
-mkFun Language.Tokens.Mapper   =  Language.Gaiwan.Mapper
-mkFun Language.Tokens.Shuffler =  Language.Gaiwan.Shuffler
+mkFun :: FunctionType -> String -> [String] -> [Exp] -> Stmt
+mkFun Language.Tokens.Mapper   =  Language.GaiwanDefs.Mapper
+mkFun Language.Tokens.Shuffler =  Language.GaiwanDefs.Shuffler
 
 parseGaiwan :: String -> Either String Program
 parseGaiwan s = runAlex s gaiwanParse

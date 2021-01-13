@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: ddbb6ef23aeeba338e8c3fd3e1aaefd532ca4a0d5c569e11a8dce902a314f84e
+-- hash: 86a07dd10635e09ff12b9b730f561b1b560bf9bc33afe45f124c408f07bcf6cf
 
 name:           gaiwan
 version:        0.1.0.0
@@ -30,6 +30,7 @@ library
   exposed-modules:
       Code
       Language.Gaiwan
+      Language.GaiwanDefs
       Language.Tokens
       Lib
       OpenCL
