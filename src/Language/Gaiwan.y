@@ -20,7 +20,7 @@ import           Language.GaiwanDefs
       builtinvar                                            { TokenBuildinVar $$   _ }
       '='                                                   { TokenSym '='  _ }
       ':'                                                   { TokenSym ':'  _ }
-      ';'                                                   { TokenSym ';'  _ }
+      semi                                                  { TokenSym ';'  _ }
       '+'                                                   { TokenSym '+'  _ }
       '-'                                                   { TokenSym '-'  _ }
       '*'                                                   { TokenSym '*'  _ }
@@ -56,7 +56,7 @@ ExpApp : avar '(' explist ')'                               { mkApp $1 (reverse 
 
 
 ExpBaseL : ExpBase                                          { [$1] }
-         | ExpBaseL ';' ExpBase %prec PIPE                  { $3:$1 }
+         | ExpBaseL semi ExpBase %prec PIPE                 { $3:$1 }
 
 ExpBase : ExpApp                                            { $1 }
         | ExpBase '%' ExpBase                               { Modulo $1 $3 }

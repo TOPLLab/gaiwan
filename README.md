@@ -20,11 +20,20 @@ Gaiwan distinguishes between two kinds of operations: mapping and shuffling.
 #### Mapper
 
 If a mapper takes n input buffers, and has m output buffers, a mapper must
-generate an m-tupple of values derived from the n-tuple on the input.
+generate an m-tuple of values derived from the n-tuple on the input.
 
 #### Shufflers
 
-Move the data in an array form place
+Move the data in one or multiple buffers. At the moment, shuffles only allow
+rearranging elements in buffers, but not between them.
+
+In the future, a mapper can be used to combine multiple buffers into one (or
+more) elements.
+
+### Acting on multiple buffers
+
+We can work with multiple buffers by separating the expressions in the shuffler
+and mappers with a semicolon.
 
 ### Loops
 

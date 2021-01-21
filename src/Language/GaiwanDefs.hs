@@ -1,7 +1,10 @@
-{-# LANGUAGE RankNTypes #-} -- for stmt
+-- for stmt
+{-# LANGUAGE RankNTypes #-}
 
-module Language.GaiwanDefs (Program (..), Stmt (..), Exp (..), subst, stmt) where
+module Language.GaiwanDefs (Program (..), Stmt (..), Exp (..), subst, substMult, stmt) where
+
 import Debug.Trace
+import Data.Maybe
 
 data Program
   = Prog [Stmt] Exp
@@ -12,7 +15,7 @@ data Stmt
   | Shuffler String [String] [Exp]
   deriving (Show)
 
-stmt :: forall t. Stmt -> (String -> [String] -> [Exp]->t) -> t
+stmt :: forall t. Stmt -> (String -> [String] -> [Exp] -> t) -> t
 stmt (Mapper a b c) f = f a b c
 stmt (Shuffler a b c) f = f a b c
 
@@ -32,14 +35,18 @@ data Exp
   | Loop Int String [Exp]
   deriving (Show, Eq)
 
-
-
 -- Substiute a for b in c
 subst :: Exp -> Exp -> Exp -> Exp
-subst a b c | a == c = b
-subst (Var a _) b l@(Loop int varname exps) | a == varname = l
-subst a@(Var _ _) b c = _subst c
-  where -- cases below are the non-special cases
+subst a b = substMult [(a,b)]
+
+-- Substitute arguments
+substMult :: [(Exp, Exp)] -> Exp -> Exp
+substMult [] c = c
+substMult kv c = fromMaybe (_subst c) (lookup c kv)
+  where
+    -- loop: remove var
+    _subst (Loop int varname exps) = Loop int varname (map (substMult $ delKey (Var varname False) kv) exps)
+    -- cases below are the non-special cases
     _subst (Let string exp exp2) = undefined
     _subst (Plus x y) = Plus (recCall x) (recCall y)
     _subst (Minus x y) = Minus (recCall x) (recCall y)
@@ -52,5 +59,10 @@ subst a@(Var _ _) b c = _subst c
     _subst (Negate exp) = Negate (recCall exp)
     _subst (PipedExp exps) = PipedExp (map _subst exps)
     _subst (ArrayGet exp idx) = ArrayGet (recCall exp) (recCall idx)
-    _subst (Loop cnt varname exps) = Loop cnt varname (map recCall exps)
-    recCall = subst a b
+    recCall = substMult kv
+
+delKey :: Exp -> [(Exp,Exp)] -> [(Exp,Exp)]
+delKey key = filter filterFun
+  where
+    filterFun (k, _) | k == key = False
+    filterFun (k, _) = True

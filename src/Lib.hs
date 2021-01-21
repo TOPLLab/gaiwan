@@ -49,7 +49,6 @@ convert (Prog defines main) =
       mapM_ registerDef defines
       convertMain main
 
-
 funPrefix True = "int_"
 funPrefix False = "user_"
 
@@ -61,7 +60,7 @@ mkKernelBinOp a b op = do
 mkKernelCode :: Exp -> SCode String
 mkKernelCode Let {} = error "Let not yet supported!"
 mkKernelCode (Plus (Int a) (Int b)) = mkKernelCodeB (Int (a + b))
-mkKernelCode (Plus (Int 0) b) = mkKernelCodeB b
+mkKernelCode (Plus (Int 0) b) = mkKernelCodeB b -- move to simplify
 mkKernelCode (Plus b (Int 0)) = mkKernelCodeB b
 mkKernelCode (Plus a b) = mkKernelBinOp a b "+"
 mkKernelCode (Minus a b) = mkKernelBinOp a b "-"
@@ -76,15 +75,14 @@ mkKernelCode (App f builtin args) = do
         stmta
         ( \_ argNames bodys ->
             mkKernelCodeB $
-              foldl
-                (\acc (argname, argval) -> subst (Var argname False) argval acc) -- TODO: this is wrong use proper substitution
+              substMult
+                (zip ((`Var` False) <$> argNames) args)
                 (head bodys)
-                (zip argNames args)
         )
 mkKernelCode (Int num) = return $ show num
 mkKernelCode (Var name True) = return $ "int_" ++ name
 mkKernelCode (Var name False) = return $ "arg_" ++ name
-mkKernelCode (Negate x) = mkKernelCodeB x >>= (return . ("-" ++))
+mkKernelCode (Negate x) = ("-" ++) <$> mkKernelCodeB x
 mkKernelCode (ArrayGet x idx) = do
   kx <- mkKernelCodeB x
   kidx <- mkKernelCodeB idx

@@ -40,7 +40,7 @@ data Code = Code
     hostCode :: [GPUAction],
     nameCount :: Int,
     defs :: [Stmt],
-    kernels :: [((Exp, [GPUBuffer], [GPUBuffer]), KernelName)], -- Put kernels herem
+    kernels :: [(([Exp], [GPUBuffer], [GPUBuffer]), KernelName)], -- Put kernels herem
     bufferCount :: Int
   }
   deriving (Show)
@@ -124,44 +124,45 @@ addDeviceCode s =
     )
 
 -- Adds a kernel and retrns the name
-addDeviceKernel :: (Exp -> SCode String) -> Exp -> [GPUBuffer] -> [GPUBuffer] -> SCode KernelName
-addDeviceKernel mkCode exp buffers buffersout = do
+-- Creates a kernel that sets the output of the i-th expression to the i-th output buffer
+addDeviceKernel :: (Exp -> SCode String) -> [Exp] -> [GPUBuffer] -> [GPUBuffer] -> SCode KernelName
+addDeviceKernel mkCode exps buffers buffersout = do
   ks <- kernels <$> get
   maybe realyAddKernel return $ lookup ks
   where
-    lookup :: [((Exp, [GPUBuffer], [GPUBuffer]), KernelName)] -> Maybe KernelName
+    lookup :: [(([Exp], [GPUBuffer], [GPUBuffer]), KernelName)] -> Maybe KernelName
     lookup ((h, n) : r) | matches h = Just n
     lookup (_ : r) = lookup r
     lookup [] = Nothing
 
-    matches e = (exp, buffers, buffersout) == e -- todo make ignore names
+    matches e = (exps, buffers, buffersout) == e -- todo make ignore names
     realyAddKernel :: SCode KernelName
     realyAddKernel = do
       name <- freshKernelName
-      code <- mkCode exp
+      code <- mapM mkCode exps
       addDeviceCode $
         mkKernelShell name buffers $
-          " int int_index = get_global_id(0);"
-            ++ intercalate "" (map (\buffer -> gpuBufferAssign buffer "int_index" code) buffersout)
-      registerKernel exp buffers buffersout name -- remember for next time
+          " int int_index = get_global_id(0);\n"
+            ++ intercalate "\n" (zipWith (gpuBufferAssign "int_index") buffersout code)
+      registerKernel exps buffers buffersout name -- remember for next time
       return name
 
 mkKernelShell :: KernelName -> [GPUBuffer] -> String -> String
-mkKernelShell (KernelName name) args code = "void kernel " ++ name ++ "(" ++ argsStr ++ ")" ++ "{ " ++ code ++ " };"
+mkKernelShell (KernelName name) args code = "void kernel " ++ name ++ "(" ++ argsStr ++ ")" ++ "{ \n" ++ code ++ " \n};"
   where
     argsStr = intercalate ", " (map gpuBufferDecl args)
 
-registerKernel :: Exp -> [GPUBuffer] -> [GPUBuffer] -> KernelName -> SCode ()
-registerKernel exp buffers buffersout name =
+registerKernel :: [Exp] -> [GPUBuffer] -> [GPUBuffer] -> KernelName -> SCode ()
+registerKernel exps buffers buffersout name =
   modify
-    ( \old@Code {kernels = ks} -> old {kernels = ((exp, buffers, buffersout), name) : ks}
+    ( \old@Code {kernels = ks} -> old {kernels = ((exps, buffers, buffersout), name) : ks}
     )
 
 gpuBufferDecl gpub@(GPUBuffer _ size) =
   "global int " ++ gpuBufferArgName gpub ++ "[" ++ show size ++ "]"
 
-gpuBufferAssign :: GPUBuffer -> String -> String -> String
-gpuBufferAssign buffer index value = gpuBufferArgName buffer ++ "[" ++ index ++ "] = " ++ value ++ ";"
+gpuBufferAssign :: String -> GPUBuffer -> String -> String
+gpuBufferAssign index buffer value = gpuBufferArgName buffer ++ "[" ++ index ++ "] = " ++ value ++ ";"
 
 -- TODO make the stuff below nicer
 gpuBufferGet :: GPUBuffer -> Exp -> Exp
