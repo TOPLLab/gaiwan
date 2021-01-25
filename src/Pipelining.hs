@@ -10,9 +10,11 @@ import qualified Data.Set as Set
 import Debug.Trace
 import Control.Monad
 import Language.GaiwanDefs
+import Data.Foldable
+
 
 data PipelineStep = PipelineStep
-  { _inBuf :: [GPUBuffer],
+  {
     _outBuf :: [GPUBuffer],
     _expValue :: [Exp]
   }
@@ -83,7 +85,7 @@ convertPipe (h : r) = reverse . dataToList <$> foldl convP (convH h) r
                   _curExp -- copyExp bufferToCopy loopBuffer
                   =
                     PipelineStep
-                      { _inBuf = bufferToCopy, -- A copy of the out of the previous step (copy done below)
+                      {
                         _outBuf = loopBuffer, -- Out is new buffer
                         _expValue = map (`gpuBufferGet` indexVar) bufferToCopy -- Expression is a simple get
                       },
@@ -128,7 +130,7 @@ convertPipe (h : r) = reverse . dataToList <$> foldl convP (convH h) r
         x
           & curExp
             .~ PipelineStep
-              { _inBuf = x ^. (curExp . outBuf), --in of next is out of prev
+              {
                 _outBuf = [freshBuffer], -- Out is new buffer
                 _expValue =
                   map
@@ -146,7 +148,7 @@ emptyData buffers =
       _lastMap = True,
       _curExp =
         PipelineStep
-          { _inBuf = [],
+          {
             _outBuf = buffers,
             _expValue = replicate (length buffers) indexVar -- default value is just the index (there is no inBuf to read from)
           },
@@ -157,7 +159,7 @@ emptyData buffers =
 -- There is a way to make this more efficeint by passing on the suffle and the expValue (is some cases)
 copyBufExp inBuf outBuf =
   PipelineStep
-    { _inBuf = inBuf, -- A copy of the out of the previous step (copy done below)
+    {
       _outBuf = outBuf, -- Same sized output buffers
       _expValue = map (`gpuBufferGet` indexVar) inBuf -- expression is simple array access with map applied to shuffled data
     }
@@ -171,7 +173,7 @@ dataToList _ = error "shuffle present"
 analyseArrays :: [PipelineStep] -> [GPUBuffer]
 analyseArrays p = Set.toList $ foldl addI Set.empty p
   where
-    addI s PipelineStep {_inBuf = i, _outBuf = o} = foldr Set.insert s (i ++ o)
+    addI s PipelineStep {_outBuf = o} = foldr Set.insert s  o
 
 -- Convert a pipe into kernel specifications
 -- We build a Pipeline and
@@ -188,11 +190,12 @@ convertPls :: (Exp -> SCode String) -> [Exp] -> SCode ()
 convertPls mkKernelCode exps = do
   plSteps <- convertPipe exps
   mapM_ (addHostCode . AllocBuffer) $ analyseArrays plSteps
-  mapM_ convert plSteps
+  foldlM convert [] plSteps -- fold keeps pervious output buffer
   mapM_ (addHostCode . ReadBuffer) (_outBuf $ last plSteps)
   where
-    convert x = do
-      let argBufs = (x ^. inBuf) ++ (x ^. outBuf)
+    convert :: [GPUBuffer] -> PipelineStep -> SCode [GPUBuffer]
+    convert inBuf x = do
+      let argBufs = inBuf ++ (x ^. outBuf)
       fName <- addDeviceKernel mkKernelCode (_expValue x) argBufs (x ^. outBuf)
       addHostCode $ CallKernel fName argBufs (gpuBufferSize $ last argBufs)
-      return ()
+      return (x ^. outBuf)
