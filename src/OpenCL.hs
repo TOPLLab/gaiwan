@@ -4,12 +4,13 @@ module OpenCL
     Range (..),
     OpenCLRunner,
     mkOpenRunner,
-    runList,
-    showOpenRunner,
+    mkOpenRunnerInteger,
+    run,
   )
 where
 
 import qualified Control.Exception as Ex (catch)
+import Control.Monad
 import Control.Parallel.OpenCL
 import Data.Maybe (fromMaybe)
 import Foreign
@@ -26,29 +27,35 @@ data OpenCLAction
   | ReadBuffer CLGPUBuffer
   deriving (Show)
 
-data RunCLData = RunCLData
+data RunCLData a = RunCLData
   { context :: CLContext,
     queue :: CLCommandQueue,
     program :: CLProgram,
     gpuBuffers :: [(CLGPUBuffer, CLMem)], -- buffer mapping
     kernels :: [(String, CLKernel)],
-    waitlist :: [CLEvent] -- events to wait for
+    waitlist :: [CLEvent], -- events to wait for
+    convertor :: [CInt] -> a
   }
 
--- OpenCLRunner executor renderrer?
-data OpenCLRunner = OpenCLRunner (OpenCLAction -> IO OpenCLRunner) (Maybe (([CInt] -> String) -> IO String))
+-- OpenCLRunner executor lastValue
+data OpenCLRunner a = OpenCLRunner (OpenCLAction -> IO (OpenCLRunner a)) (Maybe a)
 
 rangeArr (Range a 0 0) = [a]
 rangeArr (Range a b 0) = [a, b]
 rangeArr (Range a b c) = [a, b, c]
 
-mkOpenRunner programSource = do
+mkOpenRunnerInteger :: String -> IO (OpenCLRunner [Integer])
+mkOpenRunnerInteger = mkOpenRunner $ map toInteger
+
+
+mkOpenRunner :: ([CInt] -> a) -> String -> IO (OpenCLRunner a)
+mkOpenRunner convertor programSource = do
   -- Initialize OpenCL
   (platform : _) <- clGetPlatformIDs
   (dev : _) <- clGetDeviceIDs platform CL_DEVICE_TYPE_ALL
   context <- clCreateContext [] [dev] print
   q <- clCreateCommandQueue context dev [CL_QUEUE_PROFILING_ENABLE]
-  putStrLn programSource
+  --putStrLn programSource
 
   -- Initialize Kernel
   program <- clCreateProgramWithSource context programSource
@@ -69,33 +76,26 @@ mkOpenRunner programSource = do
             program = program,
             gpuBuffers = [],
             kernels = [],
-            waitlist = []
+            waitlist = [],
+            convertor = convertor
           }
   return $ OpenCLRunner (runAction initialData) Nothing
 
-showOpenRunner :: OpenCLRunner -> IO String
-showOpenRunner (OpenCLRunner _ (Just ptr)) = ptr show
-showOpenRunner (OpenCLRunner _ Nothing) = return "Nothing"
+-- Run with a convertor
+run :: OpenCLRunner a -> [OpenCLAction] -> IO [a]
+run oclr list = do
+  snd <$> foldM runAction (oclr, []) list
+  where
+    runAction (OpenCLRunner f _, acc) action = do
+      next@(OpenCLRunner _ v) <- f action
+      case v of
+        Just sf -> return (next, sf : acc)
+        Nothing -> return (next, acc)
 
-runList :: IO OpenCLRunner -> [OpenCLAction] -> IO OpenCLRunner
-runList oclr [] = oclr
-runList ioclr (a : r) = do
-  oclr <- ioclr
-  let OpenCLRunner f _ = oclr
-  putStrLn "--> Latest output>"
-  s <- showOpenRunner oclr
-  putStrLn s
-  putStrLn "--<"
-  print a
-  putStrLn "--"
-  print a
-  runList (f a) r
-
-
-getGpuBuffer :: RunCLData -> CLGPUBuffer -> CLMem
+getGpuBuffer :: RunCLData a -> CLGPUBuffer -> CLMem
 getGpuBuffer d buffer = fromMaybe (error "could not find buffer") $ lookup buffer (gpuBuffers d)
 
-runAction :: RunCLData -> OpenCLAction -> IO OpenCLRunner
+runAction :: RunCLData a -> OpenCLAction -> IO (OpenCLRunner a)
 runAction d (MakeKernel name args range) = do
   kernel <- clCreateKernel (program d) name
   mapM_ (\(i, n) -> clSetKernelArgSto kernel i $ getGpuBuffer d n) (zip [0 ..] args)
@@ -111,11 +111,8 @@ runAction d (ReadBuffer gpub@(CLGPUBuffer _ size)) = do
       vecSize = elemSize * size
   input <- mallocArray size :: IO (Ptr CInt)
   let cbuf = getGpuBuffer d gpub
-  print cbuf
-  print vecSize
   evt <- clEnqueueReadBuffer (queue d) cbuf True 0 vecSize (castPtr input) (waitlist d)
+  contents <- peekArray size input
   return $
     OpenCLRunner (runAction d {waitlist = [evt]}) $
-      Just $ \shower -> do
-        contents <- peekArray size input
-        return $ shower contents
+      Just (convertor d contents)

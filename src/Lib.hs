@@ -1,5 +1,6 @@
 module Lib
   ( someFunc,
+    convert,
   )
 where
 
@@ -7,16 +8,11 @@ import Code
 import Control.Monad.State.Lazy
 import Data.List
 import Data.Maybe
-import Debug.Trace
 import Language.Gaiwan
 import Language.GaiwanDefs
 -- import OpenCL
 import Pipelining
 import System.Exit
-
-
-traceThisNote :: (Show a) => String -> a -> a
-traceThisNote note a = trace (note ++ ":" ++ show a) a
 
 someFunc = someFunc2
 
@@ -38,11 +34,13 @@ someFunc2 = printG . parseGaiwan
       putStr m
       putStr "\n"
       exitFailure
-    printG (Right m) = convert m
+    printG (Right m) = do
+      result <- convert m
+      print result
 
-convert :: Program -> IO ()
+convert :: Program -> IO [[Integer]]
 convert (Prog defines main) =
-  runCode $
+  runCodeToList $
     execCode $ do
       mapM_ registerDef defines
       convertMain main

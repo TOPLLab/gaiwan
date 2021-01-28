@@ -12,7 +12,7 @@ module Code
     lookupDef,
     registerDef,
     freshGPUBuffer,
-    runCode,
+    runCodeToList,
     gpuBufferSize,
   )
 where
@@ -56,12 +56,10 @@ toOpenCL (Code.ReadBuffer x) = OpenCL.ReadBuffer (toOpenCLBuf x)
 
 toOpenCLBuf (GPUBuffer (GPUBufferName i) size) = CLGPUBuffer i size
 
-runCode :: Code -> IO ()
-runCode c = do
-  oclr <- runList (mkOpenRunner (deviceCode c)) (map toOpenCL $ hostCode c)
-  str <- showOpenRunner oclr
-  putStrLn str
-  return ()
+runCodeToList :: Code -> IO [[Integer ]]
+runCodeToList c = do
+    runner <- mkOpenRunnerInteger (deviceCode c)
+    run runner (map toOpenCL $ hostCode c)
 
 dbgRender :: Code -> String
 dbgRender c = show (hostCode c) ++ "\n\n" ++ deviceCode c

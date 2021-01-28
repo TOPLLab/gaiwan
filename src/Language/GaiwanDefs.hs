@@ -3,7 +3,6 @@
 
 module Language.GaiwanDefs (Program (..), Stmt (..), Exp (..), subst, substMult, stmt) where
 
-import Debug.Trace
 import Data.Maybe
 
 data Program

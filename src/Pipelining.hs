@@ -13,11 +13,8 @@ import Data.Foldable
 import Data.List
 import Data.Maybe
 import qualified Data.Set as Set
-import Debug.Trace
 import Language.GaiwanDefs
 
-traceThis :: (Show a) => a -> a
-traceThis a = trace (show a) a
 
 data PipelineStep = PipelineStep
   { _outBuf :: [GPUBuffer],
@@ -236,7 +233,7 @@ copyBufShufExp inBufsAndShuffles target =
 -- Convert a pipeline data into a list of Pipeline steps
 -- Note this list must be reversed just before generating code
 dataToList :: Pipeline -> [PipelineStep]
-dataToList x@Pipeline {_shuffle = Nothing} = traceThis $ (x ^. curExp) : (x ^. doneExps) -- only if the shuffle is the simple shuffle
+dataToList x@Pipeline {_shuffle = Nothing} =  (x ^. curExp) : (x ^. doneExps) -- only if the shuffle is the simple shuffle
 dataToList x@Pipeline {_shuffle = s, _curExp = p} = error $ "shuffle present " ++ show s ++ "-----" ++ show p
 
 -- Get a list of used GPUBuffers:
