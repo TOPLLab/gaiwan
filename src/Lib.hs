@@ -14,8 +14,6 @@ import Language.GaiwanDefs
 import Pipelining
 import System.Exit
 
-traceThis :: (Show a) => a -> a
-traceThis a = trace (show a) a
 
 traceThisNote :: (Show a) => String -> a -> a
 traceThisNote note a = trace (note ++ ":" ++ show a) a

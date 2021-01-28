@@ -21,7 +21,7 @@ tokens :-
   in                               { ingest $ \s -> TokenIn }
   $digit+                          { ingest $ \s -> TokenInt (read s) }
   ";"                              { ingest $ \s -> TokenSym ';' }
-  [\%\=\:\+\-\*\/\(\)\{\}\,\|]       { ingest $ \s -> TokenSym (head s) }
+  [\%\=\:\+\-\*\/\(\)\{\}\[\]\,\|]       { ingest $ \s -> TokenSym (head s) }
   $alpha [$alpha $digit \_ \']*    { ingest $ \s -> TokenVar s }
   @ [$alpha $digit \_ \']+    { ingest $ \s -> TokenBuildinVar (tail s) }
 

@@ -1,10 +1,38 @@
 #!/usr/bin/env sh
 cat <<HERE | stack run
-shuffler lol(length,index){ (index + 1) % length ; index }
-mapper haha(a,x){x + a;42}
+shuffler shift(index,A, Alen ,B, Blen){
+    A[(index + 1) % Alen] ;
+    B[(index + Blen - 1) % Blen]
+}
 
-@generateSeq ( 2, 50 )
-  | haha(0)
-  | 10:i { haha(i) | lol() | haha(-1) }
-  | haha(0)
+shuffler swap(index,A, Alen ,B, Blen){
+    B[(index) % Blen] ;
+    A[(index) % Alen]
+}
+
+
+shuffler doubler(index,A, Alen){
+    A[(index) % Alen] ;
+    A[(index) % Alen]
+}
+
+mapper haha(a,x,y){
+    a*x  ; a+y
+}
+
+mapper id(x,y) {x;y}
+
+@generateSeq (1, 10 )
+  | doubler()
+  | 2:i { haha(i+1) | swap() | shift() | haha(-1) }
+  | id()
 HERE
+exit 0
+
+  | 2:i { haha(i+1) | swap() | id() | shift() | haha(-1) }
+
+@generateSeq ( 2, 10 )
+  | haha(0+1) | swap() | shift() | haha(-1)
+
+
+

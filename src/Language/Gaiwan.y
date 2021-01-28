@@ -67,9 +67,10 @@ ExpBase : ExpApp                                            { $1 }
         | '(' ExpBase ')'                                   { $2 }
         | '-' ExpBase %prec NEG                             { Negate $2 }
         | int                                               { Int $1 }
+        | ExpBase '[' ExpBase ']'                           { ArrayGet $1 $3 }
         | avar                                              { $1 }
 
-ExpLoop : int ':' var  bracO pipedExp bracC                 { Loop $1 $3 $5 }
+ExpLoop : int ':' var  bracO pipedExp bracC                 { Loop $1 $3 (reverse $5) }
 
 Exp   : pipedExp                                            { cleanPiped (reverse $1) }
 
