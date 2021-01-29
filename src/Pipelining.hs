@@ -1,5 +1,6 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TupleSections #-}
 
 module Pipelining (Pipeline, collectBuffers, convertPls) where
 
@@ -196,7 +197,7 @@ convPMapper x@Pipeline {_shuffle = Just s} (Mapper _ argNames bodys) (App n _ ar
         & shuffle .~ Nothing
 
 -- An empty shuffle simply selects the i-th element for every buffer
-emptySuffle = map (\b -> (b, indexVar))
+emptySuffle = map (, indexVar)
 
 emptyData :: [GPUBuffer] -> Pipeline
 emptyData buffers =
@@ -213,7 +214,7 @@ emptyData buffers =
 -- There is a way to make this more efficeint by passing on the suffle and the expValue (is some cases)
 
 copyBufExp :: [GPUBuffer] -> [GPUBuffer] -> PipelineStep
-copyBufExp inBuf = copyBufShufExp (map (\c -> (c, indexVar)) inBuf)
+copyBufExp inBuf = copyBufShufExp (map (, indexVar) inBuf)
 
 copyBufShufExp :: [(GPUBuffer, Exp)] -> [GPUBuffer] -> PipelineStep
 copyBufShufExp inBufsAndShuffles target =
