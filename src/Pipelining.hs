@@ -27,8 +27,8 @@ makeLenses ''PipelineStep
 data Pipeline = Pipeline
   { _shuffle :: Maybe [(GPUBuffer, Exp)], -- Shuffle to apply to the _expValue of the _curExp → Sets the index to write to in the specified buffer?
     _curExp :: PipelineStep, -- TODO: should be a LIST
-    _doneExps :: [PipelineStep],
-    _curSize :: Int -- todo: what is the point of this field?
+    _doneExps :: [PipelineStep]
+    -- _curSize :: Int -- todo: what is the point of this field?
   }
   deriving (Show)
 
@@ -82,7 +82,7 @@ convPShuffler x (Shuffler name argnames bodys) (App n _ otherArgs) = x & shuffle
         argValues =
           concat $
             map Right otherArgs :
-            map (\bs -> [Left bs, Right $ Int (x ^. curSize)]) (shuffledOutBuf x)
+            map (\bs@(GPUBuffer _ size,_) -> [Left bs, Right $ Int size]) (shuffledOutBuf x)
 
     -- List mapping variable names to GPUBuffers
     gpuBufferArgs :: [(String, (GPUBuffer, Exp))]
@@ -137,14 +137,8 @@ convPLoop y (Loop n itterName steps) = do
       ( return $ -- Initial = simply read the coppied buffer
           Pipeline
             { _shuffle = Nothing,
-              _curExp -- copyExp loopStartBuffers loopBuffer
-              =
-                PipelineStep
-                  { _outBuf = firstOutputBuffers, -- Out is new buffer
-                    _expValue = map (`gpuBufferGet` indexVar) loopStartBuffers -- Expression is a simple get
-                  },
-              _doneExps = [],
-              _curSize = x ^. curSize
+              _curExp = copyBufExp loopStartBuffers firstOutputBuffers,
+              _doneExps = []
             }
       )
       steps
@@ -183,9 +177,8 @@ convPMapper x@Pipeline {_shuffle = Nothing} (Mapper _ argNames bodys) (App n _ a
     x
       & (curExp . expValue) .~ map (substMult $ zip ((`Var` False) <$> argNames) (args ++ (x ^. (curExp . expValue)))) bodys
 -- If the last step was a shuffle, we must be carefull
-convPMapper x@Pipeline {_shuffle = Just s} (Mapper _ argNames bodys) (App n _ args) =
-  do
-    freshBuffers <- replicateM (length bodys) $ freshGPUBuffer (x ^. curSize)
+convPMapper x@Pipeline {_shuffle = Just s} (Mapper _ argNames bodys) (App n _ args) = do
+    freshBuffers <- mapM (\(GPUBuffer _ s, _) -> freshGPUBuffer s) $ shuffledOutBuf x
     return $
       x
         & curExp
@@ -214,8 +207,7 @@ emptyData buffers =
           { _outBuf = buffers,
             _expValue = replicate (length buffers) indexVar -- default value is just the index (there is no inBuf to read from)
           },
-      _doneExps = [],
-      _curSize = maximum $ gpuBufferSize <$> buffers
+      _doneExps = []
     }
 
 -- There is a way to make this more efficeint by passing on the suffle and the expValue (is some cases)
