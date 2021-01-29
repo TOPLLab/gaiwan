@@ -23,7 +23,7 @@ arbSizedExp m
 arbSizedExp m = do
   n <- choose (0, m `div` 2)
   m <- choose (0, m `div` 2)
-  oneof $ arbBinOp n m <$> [Plus, Times, Div, Minus]
+  oneof $ (arbBinOp n m <$> [Plus, Times, Div, Minus]) ++ [Negate <$> arbSizedExp n]
 
 instance Arbitrary Exp where
   arbitrary = sized arbSizedExp
@@ -38,17 +38,17 @@ instance Arbitrary Exp where
 
 main :: IO ()
 main = hspec $ do
-  describe "Language.Gaiwan.subst" $ do
-    it "Correctly replaces stuff" $ do
-      subst (Var "a" True) (Int 42) (Var "a" True) `shouldBe` Int 42
+    describe "Language.Gaiwan.subst" $ do
+      it "Correctly replaces stuff" $ do
+        subst (Var "a" True) (Int 42) (Var "a" True) `shouldBe` Int 42
 
-    it "does nothing when the variable does not occur" $
-      property $ \x y z -> subst (Var "no" y) z x `shouldBe` x -- varnames start with var
-    it "Correctly replaces stuff" $ do
-      subst (Var "a" True) (Int 42) (Plus (Var "a" True) (Int 12)) `shouldBe` Plus (Int 42) (Int 12)
+      it "does nothing when the variable does not occur" $
+        property $ \x y z -> subst (Var "no" y) z x `shouldBe` x -- varnames start with var
+      it "Correctly replaces stuff" $ do
+        subst (Var "a" True) (Int 42) (Plus (Var "a" True) (Int 12)) `shouldBe` Plus (Int 42) (Int 12)
 
-    it "computes the right value for an example program" $ do
-      convert program `shouldReturn` [[-3, -5, -7, -9, -11, -13, -15, -17, -19, -21], [-1, -2, -3, -4, -5, -6, -7, -8, -9, -10]]
+      it "computes the right value for an example program" $ do
+        convert program `shouldReturn` [[-3, -5, -7, -9, -11, -13, -15, -17, -19, -21], [-1, -2, -3, -4, -5, -6, -7, -8, -9, -10]]
 
 program =
   Prog
