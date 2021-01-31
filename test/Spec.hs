@@ -88,17 +88,17 @@ program =
         ]
     )
 
-expectedLoopReturn = [[10,11,12,13,14,15,16,17,18,19]]
+expectedLoopReturn = [[20,21,22,23,24,25,26,27,28,29]]
 
 programLoopBody :: Exp -> Exp
-programLoopBody i = App "inc" False [Int 1]
+programLoopBody i = App "inc" False [i]
 
 program1Unrolled =
   Prog
     programDefines
     ( PipedExp $
         App "generateSeq" True [Int 1, Int 10] :
-        concatMap (\i -> map (programLoopBody . Int) [0 .. (i -1)]) [0 .. (5 -1)]
+        concatMap (\i -> map (programLoopBody . Int) [0 .. (i -1)]) [0 .. (6 -1)]
     )
 
 program1 =
@@ -107,7 +107,7 @@ program1 =
     ( PipedExp
         [ App "generateSeq" True [Int 1, Int 10],
           Loop
-            (Int 5)
+            (Int 6)
             "i"
             [ Loop
                 (Var "i" False)
