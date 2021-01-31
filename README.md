@@ -30,14 +30,14 @@ rearranging elements in buffers, but not between them.
 In the future, a mapper can be used to combine multiple buffers into one (or
 more) elements.
 
-Shufflers should always end with a semicolon separated list of array acesses where the accessesd arrrays are arguments.
+Shufflers should always end with a semicolon separated list of array acesses
+where the accessesd arrrays are arguments.
 
 ```
 shuffer(i, A, Alen, B, Blen){
   A[i] ; B[i] ; A[i]
 }
 ```
-
 
 ### Acting on multiple buffers
 

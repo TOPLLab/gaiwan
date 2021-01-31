@@ -31,7 +31,7 @@ data Exp
   | Negate Exp
   | PipedExp [Exp]
   | ArrayGet Exp Exp
-  | Loop Int String [Exp]
+  | Loop Exp String [Exp]
   deriving (Show, Eq)
 
 -- Substiute a for b in c

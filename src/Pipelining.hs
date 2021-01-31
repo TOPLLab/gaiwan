@@ -16,7 +16,6 @@ import Data.Maybe
 import qualified Data.Set as Set
 import Language.GaiwanDefs
 
-
 data PipelineStep = PipelineStep
   { _outBuf :: [GPUBuffer],
     _expValue :: [Exp]
@@ -83,7 +82,7 @@ convPShuffler x (Shuffler name argnames bodys) (App n _ otherArgs) = x & shuffle
         argValues =
           concat $
             map Right otherArgs :
-            map (\bs@(GPUBuffer _ size,_) -> [Left bs, Right $ Int size]) (shuffledOutBuf x)
+            map (\bs@(GPUBuffer _ size, _) -> [Left bs, Right $ Int size]) (shuffledOutBuf x)
 
     -- List mapping variable names to GPUBuffers
     gpuBufferArgs :: [(String, (GPUBuffer, Exp))]
@@ -125,7 +124,7 @@ convPShuffler x (Shuffler name argnames bodys) (App n _ otherArgs) = x & shuffle
 -- A loop begins and ends with a stored array (for simplicity atm)
 -- TODO: make more simple
 convPLoop :: SCode Pipeline -> Exp -> SCode Pipeline
-convPLoop y (Loop n itterName steps) = do
+convPLoop y (Loop (Int n) itterName steps) = do
   x <- y
   let preLoopBufSufs = shuffledOutBuf x
   -- Old data is coppies into this buffer (taking shuffle into account)
@@ -133,26 +132,21 @@ convPLoop y (Loop n itterName steps) = do
   -- The first step will read from loopStartBuffers and put them in firstOutputBuffers
   firstOutputBuffers <- mapM (\(GPUBuffer _ s, _) -> freshGPUBuffer s) preLoopBufSufs
   loopBody <-
-    foldl
-      convP
-      ( return $ -- Initial = simply read the coppied buffer
-          Pipeline
-            { _shuffle = Nothing,
-              _curExp = copyBufExp loopStartBuffers firstOutputBuffers,
-              _doneExps = []
-            }
+    mapM
+      ( \i ->
+          foldl
+            convP
+            ( return $ -- Initial = simply read the coppied buffer
+                Pipeline
+                  { _shuffle = Nothing,
+                    _curExp = copyBufExp loopStartBuffers firstOutputBuffers,
+                    _doneExps = []
+                  }
+            )
+            (map (subst (Var itterName False) (Int i)) steps)
       )
-      steps
-  let copyResToStartBuf = copyBufExp (loopBody ^. (curExp . outBuf)) loopStartBuffers
-  let loopSteps = copyResToStartBuf : dataToList loopBody
-  let loopExpFull =
-        concatMap
-          ( \it ->
-              map
-                (over expValue $ map $ subst (Var itterName False) it)
-                loopSteps
-          )
-          $ reverse $ Int <$> [0 .. (n -1)] -- Indexes (reversed because the Exp is reversed)
+      (reverse [0 .. (n -1)])
+  let loopExpFull = concatMap (\bdy -> (copyBufExp (bdy ^. (curExp . outBuf)) loopStartBuffers):dataToList bdy) loopBody
   return $
     x
       & shuffle .~ Nothing
@@ -164,7 +158,7 @@ convPLoop y (Loop n itterName steps) = do
                (x ^. curExp) : -- Do last action before loop
                t -- do all previous actions
            )
-
+convPLoop y (Loop expr _ _) = error $ "Using loop with non-int value:" ++ show expr
 
 assert :: Int -> Int -> a -> a
 assert a b | a == b = id
@@ -179,25 +173,25 @@ convPMapper x@Pipeline {_shuffle = Nothing} (Mapper _ argNames bodys) (App n _ a
       & (curExp . expValue) .~ map (substMult $ zip ((`Var` False) <$> argNames) (args ++ (x ^. (curExp . expValue)))) bodys
 -- If the last step was a shuffle, we must be carefull
 convPMapper x@Pipeline {_shuffle = Just s} (Mapper _ argNames bodys) (App n _ args) = do
-    freshBuffers <- mapM (\(GPUBuffer _ s, _) -> freshGPUBuffer s) $ shuffledOutBuf x
-    return $
-      x
-        & curExp
-          .~ PipelineStep
-            { _outBuf = freshBuffers, -- Out is new buffer
-              _expValue =
-                assert (length argNames) (length s + length args) $ -- todo remove check
-                  map
-                    ( substMult $
-                        zip ((`Var` False) <$> argNames) $ args ++ map (uncurry gpuBufferGet) s
-                    )
-                    bodys -- expression is simple array access with map applied to shuffled dat
-            }
-        & doneExps %~ ((x ^. curExp) :) -- prepend the old curExp
-        & shuffle .~ Nothing
+  freshBuffers <- mapM (\(GPUBuffer _ s, _) -> freshGPUBuffer s) $ shuffledOutBuf x
+  return $
+    x
+      & curExp
+        .~ PipelineStep
+          { _outBuf = freshBuffers, -- Out is new buffer
+            _expValue =
+              assert (length argNames) (length s + length args) $ -- todo remove check
+                map
+                  ( substMult $
+                      zip ((`Var` False) <$> argNames) $ args ++ map (uncurry gpuBufferGet) s
+                  )
+                  bodys -- expression is simple array access with map applied to shuffled dat
+          }
+      & doneExps %~ ((x ^. curExp) :) -- prepend the old curExp
+      & shuffle .~ Nothing
 
 -- An empty shuffle simply selects the i-th element for every buffer
-emptySuffle = map (, indexVar)
+emptySuffle = map (,indexVar)
 
 emptyData :: [GPUBuffer] -> Pipeline
 emptyData buffers =
@@ -214,7 +208,7 @@ emptyData buffers =
 -- There is a way to make this more efficeint by passing on the suffle and the expValue (is some cases)
 
 copyBufExp :: [GPUBuffer] -> [GPUBuffer] -> PipelineStep
-copyBufExp inBuf = copyBufShufExp (map (, indexVar) inBuf)
+copyBufExp inBuf = copyBufShufExp (map (,indexVar) inBuf)
 
 copyBufShufExp :: [(GPUBuffer, Exp)] -> [GPUBuffer] -> PipelineStep
 copyBufShufExp inBufsAndShuffles target =
@@ -226,7 +220,7 @@ copyBufShufExp inBufsAndShuffles target =
 -- Convert a pipeline data into a list of Pipeline steps
 -- Note this list must be reversed just before generating code
 dataToList :: Pipeline -> [PipelineStep]
-dataToList x@Pipeline {_shuffle = Nothing} =  (x ^. curExp) : (x ^. doneExps) -- only if the shuffle is the simple shuffle
+dataToList x@Pipeline {_shuffle = Nothing} = (x ^. curExp) : (x ^. doneExps) -- only if the shuffle is the simple shuffle
 dataToList x@Pipeline {_shuffle = s, _curExp = p} = error $ "shuffle present " ++ show s ++ "-----" ++ show p
 
 -- Get a list of used GPUBuffers:
