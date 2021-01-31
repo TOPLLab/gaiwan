@@ -124,7 +124,8 @@ convPShuffler x (Shuffler name argnames bodys) (App n _ otherArgs) = x & shuffle
 -- A loop begins and ends with a stored array (for simplicity atm)
 -- TODO: make more simple
 convPLoop :: SCode Pipeline -> Exp -> SCode Pipeline
-convPLoop y (Loop (Int n) itterName steps) = do
+convPLoop y (Loop (Int 0) _ _) = y -- do nothing when 0 iterations
+convPLoop y (Loop (Int n) itterName steps) | n > 0 = do
   x <- y
   let preLoopBufSufs = shuffledOutBuf x
   -- Old data is coppies into this buffer (taking shuffle into account)
@@ -146,7 +147,10 @@ convPLoop y (Loop (Int n) itterName steps) = do
             (map (subst (Var itterName False) (Int i)) steps)
       )
       (reverse [0 .. (n -1)])
-  let loopExpFull = concatMap (\bdy -> (copyBufExp (bdy ^. (curExp . outBuf)) loopStartBuffers):dataToList bdy) loopBody
+  let loopExpFull =
+        concatMap
+          (\bdy -> copyBufExp (bdy ^. (curExp . outBuf)) loopStartBuffers : dataToList bdy)
+          loopBody
   return $
     x
       & shuffle .~ Nothing

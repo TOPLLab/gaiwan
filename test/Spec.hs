@@ -42,6 +42,12 @@ main = hspec $ do
     it "Correctly replaces stuff" $ do
       subst (Var "a" True) (Int 42) (Var "a" True) `shouldBe` Int 42
 
+    it "Correctly replaces stuff" $ do
+      subst (Var "a" False) (Int 42) (Var "a" False) `shouldBe` Int 42
+
+    it "Correctly replaces stuff" $ do
+      subst (Var "a" False) (Int 42) (Loop (Var "a" False) "a" [(Var "a" False)]) `shouldBe` (Loop (Int 42) "a" [(Var "a" False)])
+
     it "does nothing when the variable does not occur" $
       property $ \x y z -> subst (Var "no" y) z x `shouldBe` x -- varnames start with var
     it "Correctly replaces stuff" $ do
@@ -82,7 +88,8 @@ program =
         ]
     )
 
-expectedLoopReturn = [[5,6,7,8,9,10,11,12,13,14]]
+expectedLoopReturn = [[10,11,12,13,14,15,16,17,18,19]]
+
 programLoopBody :: Exp -> Exp
 programLoopBody i = App "inc" False [Int 1]
 
@@ -91,7 +98,7 @@ program1Unrolled =
     programDefines
     ( PipedExp $
         App "generateSeq" True [Int 1, Int 10] :
-        map (programLoopBody . Int) [0 .. (5 -1)]
+        concatMap (\i -> map (programLoopBody . Int) [0 .. (i -1)]) [0 .. (5 -1)]
     )
 
 program1 =
@@ -102,7 +109,11 @@ program1 =
           Loop
             (Int 5)
             "i"
-            [ programLoopBody (Var "i" False)
+            [ Loop
+                (Var "i" False)
+                "j"
+                [ programLoopBody (Var "j" False)
+                ]
             ],
           App "id" False []
         ]

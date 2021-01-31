@@ -44,7 +44,7 @@ substMult [] c = c
 substMult kv c = fromMaybe (_subst c) (lookup c kv)
   where
     -- loop: remove var
-    _subst (Loop int varname exps) = Loop int varname (map (substMult $ delKey (Var varname False) kv) exps)
+    _subst (Loop cntExp varname exps) = Loop (simplifyExp $ recCall cntExp) varname (map (substMult $ delKey (Var varname False) kv) exps)
     -- cases below are the non-special cases
     _subst (Let string exp exp2) = undefined
     _subst (Plus x y) = Plus (recCall x) (recCall y)
@@ -59,6 +59,13 @@ substMult kv c = fromMaybe (_subst c) (lookup c kv)
     _subst (PipedExp exps) = PipedExp (map _subst exps)
     _subst (ArrayGet exp idx) = ArrayGet (recCall exp) (recCall idx)
     recCall = substMult kv
+
+simplifyExp (Plus (Int a) (Int b)) = Int $ a + b
+simplifyExp (Minus (Int a) (Int b)) = Int $ a - b
+simplifyExp (Times (Int a) (Int b)) = Int $ a * b
+simplifyExp (Div (Int a) (Int b)) = Int $ div a b
+simplifyExp (Modulo (Int a) (Int b)) = Int $ mod a b
+simplifyExp e = e
 
 delKey :: Exp -> [(Exp,Exp)] -> [(Exp,Exp)]
 delKey key = filter filterFun
