@@ -16,11 +16,11 @@ shuffler doubler(index,A, Alen){
     A[(index) % Alen]
 }
 
-mapper haha(a,x,y){
+mapper haha(i,a,x,y){
     a*x  ; a+y
 }
 
-mapper id(x,y) {x;y}
+mapper id(i,x,y) {x;y}
 
 @generateSeq (1, 10 )
   | doubler()

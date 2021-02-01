@@ -174,7 +174,7 @@ convPMapper :: Pipeline -> Stmt -> Exp -> SCode Pipeline
 convPMapper x@Pipeline {_shuffle = Nothing} (Mapper _ argNames bodys) (App n _ args) =
   return $
     x
-      & (curExp . expValue) .~ map (substMult $ zip ((`Var` False) <$> argNames) (args ++ (x ^. (curExp . expValue)))) bodys
+      & (curExp . expValue) .~ map (substMult $ zip ((`Var` False) <$> argNames) (indexVar:args ++ (x ^. (curExp . expValue)))) bodys
 -- If the last step was a shuffle, we must be carefull
 convPMapper x@Pipeline {_shuffle = Just s} (Mapper _ argNames bodys) (App n _ args) = do
   freshBuffers <- mapM (\(GPUBuffer _ s, _) -> freshGPUBuffer s) $ shuffledOutBuf x
@@ -184,10 +184,10 @@ convPMapper x@Pipeline {_shuffle = Just s} (Mapper _ argNames bodys) (App n _ ar
         .~ PipelineStep
           { _outBuf = freshBuffers, -- Out is new buffer
             _expValue =
-              assert (length argNames) (length s + length args) $ -- todo remove check
+              assert (length argNames) (length s + length args + 1) $ -- todo remove check
                 map
                   ( substMult $
-                      zip ((`Var` False) <$> argNames) $ args ++ map (uncurry gpuBufferGet) s
+                      zip ((`Var` False) <$> argNames) $ indexVar:args ++ map (uncurry gpuBufferGet) s
                   )
                   bodys -- expression is simple array access with map applied to shuffled dat
           }

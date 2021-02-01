@@ -1,6 +1,6 @@
 -- Todo before this works:
--- - add index to mapper
--- - nested loops on non-fixed length
+-- - √ add index to mapper
+-- - √ nested loops on non-fixed length
 -- - Powers and bitshifts
 -- - Bitwize operators (now with divisions)
 -- - readFile
