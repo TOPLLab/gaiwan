@@ -16,6 +16,7 @@ import Data.Maybe
 import qualified Data.Set as Set
 import Language.GaiwanDefs
 
+
 data PipelineStep = PipelineStep
   { _outBuf :: [GPUBuffer],
     _expValue :: [Exp]
@@ -49,13 +50,70 @@ convertPipe (h : r) = reverse . dataToList <$> foldl convP (convH h) r
 -- (we need the SCode State monad to translate names into calls to the right kind of steps)
 convP :: SCode Pipeline -> Exp -> SCode Pipeline
 convP x a@Loop {} = convPLoop x a
-convP x a@(App n _ _) = do
+convP x a@(App "chunkBy" True [Int cnt]) = convPSplitter cnt <$> x
+convP x a@(App "join" True [Int cnt]) = x >>= convPJoin cnt
+convP x a@(App name True _) = error $ "Unknown builtin function name" ++ name
+convP x a@(App n False _) = do
   t <- lookupDef n
   y <- x
   case t of
     Just f@Shuffler {} -> return $ convPShuffler y f a
     Just f@Mapper {} -> convPMapper y f a
     _ -> error $ "Unknown name " ++ show n
+
+convPJoin :: Int -> Pipeline -> SCode Pipeline
+convPJoin cnt x =  do
+  let groupedBuffers = groupByCnt $ shuffledOutBuf x
+  freshBuffers <- mapM (\((GPUBuffer _ s, _) : _) -> freshGPUBuffer s) groupedBuffers -- todo check if same buffer (use sum of sizes)
+  return $
+    x
+      & curExp
+        .~ PipelineStep
+          { _outBuf = freshBuffers, -- Out is new buffer
+            _expValue =
+              map
+                ( convToIf
+                    . zipWith
+                      ( \index (buff, shuf) ->
+                          ( index,
+                            gpuBufferGet
+                              buff
+                              (subst indexVar shuf (Div (Minus indexVar (Int index)) (Int cnt))) -- TODO is mimus realy needed?
+                          )
+                      )
+                      [0 ..]
+                )
+                groupedBuffers
+          }
+      & doneExps %~ ((x ^. curExp) :) -- prepend the old curExp
+      & shuffle .~ Nothing
+  where
+    groupByCnt :: [a] -> [[a]]
+    groupByCnt [] = []
+    groupByCnt l | length l >= cnt = let (h, r) = splitAt cnt l in h : groupByCnt r
+    groupByCnt l = error $ "could not join list that is not a multiple of the arg, left: " ++ show (length l)
+    convToIf :: [(Int, Exp)] -> Exp
+    convToIf [(_, e)] = e
+    convToIf ((index, e) : r) = If (IsEq (Modulo indexVar (Int cnt)) (Int index)) e (convToIf r)
+
+convPSplitter :: Int -> Pipeline -> Pipeline
+convPSplitter cnt x =
+  x
+    & shuffle
+      ?~ concatMap
+        ( \(buf, shuff) ->
+            map
+              ( \offset ->
+                  ( buf,
+                    subst indexVar (indexPos offset) shuff
+                  )
+              )
+              [0 .. (cnt -1)]
+        )
+        (shuffledOutBuf x)
+  where
+    indexPos :: Int -> Exp
+    indexPos offset = Plus (Times indexVar (Int cnt)) (Int offset)
 
 shuffledOutBuf :: Pipeline -> [(GPUBuffer, Exp)]
 shuffledOutBuf x = fromMaybe (emptySuffle (x ^. (curExp . outBuf))) $ x ^. shuffle
@@ -174,7 +232,7 @@ convPMapper :: Pipeline -> Stmt -> Exp -> SCode Pipeline
 convPMapper x@Pipeline {_shuffle = Nothing} (Mapper _ argNames bodys) (App n _ args) =
   return $
     x
-      & (curExp . expValue) .~ map (substMult $ zip ((`Var` False) <$> argNames) (indexVar:args ++ (x ^. (curExp . expValue)))) bodys
+      & (curExp . expValue) .~ map (substMult $ zip ((`Var` False) <$> argNames) (indexVar : args ++ (x ^. (curExp . expValue)))) bodys
 -- If the last step was a shuffle, we must be carefull
 convPMapper x@Pipeline {_shuffle = Just s} (Mapper _ argNames bodys) (App n _ args) = do
   freshBuffers <- mapM (\(GPUBuffer _ s, _) -> freshGPUBuffer s) $ shuffledOutBuf x
@@ -187,7 +245,7 @@ convPMapper x@Pipeline {_shuffle = Just s} (Mapper _ argNames bodys) (App n _ ar
               assert (length argNames) (length s + length args + 1) $ -- todo remove check
                 map
                   ( substMult $
-                      zip ((`Var` False) <$> argNames) $ indexVar:args ++ map (uncurry gpuBufferGet) s
+                      zip ((`Var` False) <$> argNames) $ indexVar : args ++ map (uncurry gpuBufferGet) s
                   )
                   bodys -- expression is simple array access with map applied to shuffled dat
           }

@@ -62,13 +62,17 @@ main = hspec $ do
     it "computes the right value for an example program with nested for" $ do
       convert program1 `shouldReturn` expectedLoopReturn
 
+    it "computes the right value for an example program with a split" $ do
+      convert programWithSplit `shouldReturn` [[0,11,20,13,40,15,60,17,80,19]]
+
 programDefines =
   [ Shuffler "shift" ["index", "A", "Alen", "B", "Blen"] [ArrayGet (Var "A" False) (Modulo (Plus (Var "index" False) (Int 1)) (Var "Alen" False)), ArrayGet (Var "B" False) (Modulo (Minus (Plus (Var "index" False) (Var "Blen" False)) (Int 1)) (Var "Blen" False))],
     Shuffler "swap" ["index", "A", "Alen", "B", "Blen"] [ArrayGet (Var "B" False) (Modulo (Var "index" False) (Var "Blen" False)), ArrayGet (Var "A" False) (Modulo (Var "index" False) (Var "Alen" False))],
     Shuffler "doubler" ["index", "A", "Alen"] [ArrayGet (Var "A" False) (Modulo (Var "index" False) (Var "Alen" False)), ArrayGet (Var "A" False) (Modulo (Var "index" False) (Var "Alen" False))],
-    Mapper "haha" ["i","a", "x", "y"] [Times (Var "a" False) (Var "x" False), Plus (Var "a" False) (Var "y" False)],
-    Mapper "inc" ["i","a", "y"] [Plus (Var "a" False) (Var "y" False)],
-    Mapper "id" ["i","x", "y"] [Var "x" False, Var "y" False]
+    Mapper "haha" ["i", "a", "x", "y"] [Times (Var "a" False) (Var "x" False), Plus (Var "a" False) (Var "y" False)],
+    Mapper "inc" ["i", "a", "y"] [Plus (Var "a" False) (Var "y" False)],
+    Mapper "id" ["i", "x", "y"] [Var "x" False, Var "y" False],
+    Mapper "id1" ["i", "x"] [Var "x" False]
   ]
 
 program =
@@ -88,7 +92,7 @@ program =
         ]
     )
 
-expectedLoopReturn = [[20,21,22,23,24,25,26,27,28,29]]
+expectedLoopReturn = [[20, 21, 22, 23, 24, 25, 26, 27, 28, 29]]
 
 programLoopBody :: Exp -> Exp
 programLoopBody i = App "inc" False [i]
@@ -116,5 +120,16 @@ program1 =
                 ]
             ],
           App "id" False []
+        ]
+    )
+
+programWithSplit =
+  Prog
+    programDefines
+    ( PipedExp
+        [ App "generateSeq" True [Int 1, Int 10],
+          App "chunkBy" True [Int 2],
+          App "haha" False [Int 10],
+          App "join" True [Int 2]
         ]
     )

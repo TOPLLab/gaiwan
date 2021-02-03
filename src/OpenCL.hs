@@ -55,7 +55,7 @@ mkOpenRunner convertor programSource = do
   (dev : _) <- clGetDeviceIDs platform CL_DEVICE_TYPE_ALL
   context <- clCreateContext [] [dev] print
   q <- clCreateCommandQueue context dev [CL_QUEUE_PROFILING_ENABLE]
-  --putStrLn programSource
+  -- putStrLn programSource
 
   -- Initialize Kernel
   program <- clCreateProgramWithSource context programSource

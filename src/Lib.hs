@@ -38,12 +38,27 @@ someFunc2 = printG . parseGaiwan
       result <- convert m
       print result
 
-convert :: Program -> IO [[Integer]]
-convert (Prog defines main) =
-  runCodeToList $
+someFunc3 :: String -> IO ()
+someFunc3 = printG . parseGaiwan
+  where
+    printG (Left m) = do
+      putStr "Parsing failed!\n"
+      putStr m
+      putStr "\n"
+      exitFailure
+    printG (Right m) = do
+      print m
+      print $ compile m
+
+
+compile (Prog defines main)=
     execCode $ do
       mapM_ registerDef defines
       convertMain main
+
+convert :: Program -> IO [[Integer]]
+convert program =
+  runCodeToList $ compile program
 
 funPrefix True = "int_"
 funPrefix False = "user_"
@@ -63,6 +78,12 @@ mkKernelCode (Minus a b) = mkKernelBinOp a b "-"
 mkKernelCode (Times a b) = mkKernelBinOp a b "*"
 mkKernelCode (Div a b) = mkKernelBinOp a b "/"
 mkKernelCode (Modulo a b) = mkKernelBinOp a b "%"
+mkKernelCode (IsEq a b) = mkKernelBinOp a b "=="
+mkKernelCode (If cond texp fexp) = do
+    condStr <- mkKernelCodeB cond
+    restultStr <- mkKernelBinOp texp fexp ":"
+    return $ condStr ++ "?"  ++ restultStr
+
 mkKernelCode (App f builtin args) = do
   callKind <- lookupDef f
   case callKind of
@@ -86,6 +107,8 @@ mkKernelCode (ArrayGet x idx) = do
 mkKernelCode (PipedExp expressions) = do
   convertPls mkKernelCodeB expressions
   return ""
+mkKernelCode unknownCode = error $ "Could not convert code:" ++ show unknownCode
+
 
 -- Add brackets
 mkKernelCodeB :: Exp -> SCode String

@@ -12,11 +12,13 @@ data Program
 data Stmt
   = Mapper String [String] [Exp]
   | Shuffler String [String] [Exp]
+  | Splitter String [String] [Exp]
   deriving (Show)
 
 stmt :: forall t. Stmt -> (String -> [String] -> [Exp] -> t) -> t
 stmt (Mapper a b c) f = f a b c
 stmt (Shuffler a b c) f = f a b c
+stmt (Splitter a b c) f = f a b c
 
 data Exp
   = Let String Exp Exp
@@ -32,6 +34,8 @@ data Exp
   | PipedExp [Exp]
   | ArrayGet Exp Exp
   | Loop Exp String [Exp]
+  | If Exp Exp Exp
+  | IsEq Exp Exp
   deriving (Show, Eq)
 
 -- Substiute a for b in c
