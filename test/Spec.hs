@@ -67,14 +67,19 @@ main = hspec $ do
       convert (programSplitJoin 1) `shouldReturn` [[0,11,20,13,40,15,60,17,80,19]]
 
     it "SplitJoin 2 buf offset 2" $ do
-      convert (programSplitJoin 2) `shouldReturn` [[0,10,12,13,40,50,16,17,80,90]]
+      convert (programSplitJoin 2) `shouldReturn` [[0,10,12,13,40,50,16,17]]
 
     it "SplitJoin 2 buf offset 3" $ do
-      convert (programSplitJoin 3) `shouldReturn` [[0,10,20,13,14,15,60,70,80,19]]
+      convert (programSplitJoin 3) `shouldReturn` [[0,10,20,13,14,15]]
 
     it "SplitJoin 2 buf offset 0" $ do
       convert (programSplitJoin 0) `shouldThrow` anyException -- should type error???
 
+    it "Split 2 buf offset 1" $ do
+      convert (programSplit 1) `shouldReturn` [[0,2,4,6,8],[1,3,5,7,9]]
+
+    it "Split 2 buf offset 2" $ do
+      convert (programSplit 2) `shouldReturn` [[0,2,4,6,8],[1,3,5,7,9]]
 programDefines =
   [ Shuffler "shift" ["index", "A", "Alen", "B", "Blen"] [ArrayGet (Var "A" False) (Modulo (Plus (Var "index" False) (Int 1)) (Var "Alen" False)), ArrayGet (Var "B" False) (Modulo (Minus (Plus (Var "index" False) (Var "Blen" False)) (Int 1)) (Var "Blen" False))],
     Shuffler "swap" ["index", "A", "Alen", "B", "Blen"] [ArrayGet (Var "B" False) (Modulo (Var "index" False) (Var "Blen" False)), ArrayGet (Var "A" False) (Modulo (Var "index" False) (Var "Alen" False))],
@@ -133,6 +138,15 @@ program1 =
         ]
     )
 
+programSplit offset =
+  Prog
+    programDefines
+    ( PipedExp
+        [ App "generateSeq" True [Int 1, Int 10],
+          App "split" True $ Int <$> [2, offset],
+          App "id" False []
+        ]
+    )
 programSplitJoin offset =
   let args = Int <$> [2, offset]
   in
@@ -141,7 +155,7 @@ programSplitJoin offset =
     ( PipedExp
         [ App "generateSeq" True [Int 1, Int 10],
           App "split" True args,
-          App "haha" False [Int 10]
-        , App "join" True args
+          App "haha" False [Int 10],
+          App "join" True args
         ]
     )
