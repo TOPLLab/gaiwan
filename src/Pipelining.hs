@@ -331,7 +331,7 @@ convertPls mkKernelCode exps = do
   plSteps <- convertPipe exps
   mapM_ (addHostCode . AllocBuffer) $ collectBuffers plSteps
   foldlM convert [] plSteps -- fold keeps pervious output buffer
-  mapM_ (addHostCode . ReadBuffer) (_outBuf $ last plSteps)
+  mapM_ (addHostCode . ReadBuffer) (reverse $ _outBuf $ last plSteps)
   where
     convert :: [GPUBuffer] -> PipelineStep -> SCode [GPUBuffer]
     convert inBuf x = do

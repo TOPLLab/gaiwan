@@ -54,8 +54,14 @@ main = hspec $ do
       subst (Var "a" True) (Int 42) (Plus (Var "a" True) (Int 12)) `shouldBe` Plus (Int 42) (Int 12)
 
   describe "Lib.convert (integration tests)" $ do
+    it "computes in the right order" $ do
+      convert programSimple `shouldReturn` [[1, 1, 1], [2, 2, 2], [3, 3, 3], [4, 4, 4]]
+
     it "computes the right value for an example program" $ do
-      convert program `shouldReturn` [[-3, -5, -7, -9, -11, -13, -15, -17, -19, -21], [-1, -2, -3, -4, -5, -6, -7, -8, -9, -10]]
+      convert program
+        `shouldReturn` [ [-1, -2, -3, -4, -5, -6, -7, -8, -9, -10],
+                         [-3, -5, -7, -9, -11, -13, -15, -17, -19, -21]
+                       ]
 
     it "computes the right value for an example program with nested for" $ do
       convert program1Unrolled `shouldReturn` expectedLoopReturn
@@ -64,22 +70,31 @@ main = hspec $ do
       convert program1 `shouldReturn` expectedLoopReturn
 
     it "SplitJoin 2 buf offset 1" $ do
-      convert (programSplitJoin 1) `shouldReturn` [[0,11,20,13,40,15,60,17,80,19]]
+      convert (programSplitJoin 1) `shouldReturn` [[0, 11, 20, 13, 40, 15, 60, 17, 80, 19]]
 
     it "SplitJoin 2 buf offset 2" $ do
-      convert (programSplitJoin 2) `shouldReturn` [[0,10,12,13,40,50,16,17]]
+      convert (programSplitJoin 2) `shouldReturn` [[0, 10, 12, 13, 40, 50, 16, 17]]
 
     it "SplitJoin 2 buf offset 3" $ do
-      convert (programSplitJoin 3) `shouldReturn` [[0,10,20,13,14,15]]
+      convert (programSplitJoin 3) `shouldReturn` [[0, 10, 20, 13, 14, 15]]
 
     it "SplitJoin 2 buf offset 0" $ do
       convert (programSplitJoin 0) `shouldThrow` anyException -- should type error???
-
     it "Split 2 buf offset 1" $ do
-      convert (programSplit 1) `shouldReturn` [[0,2,4,6,8],[1,3,5,7,9]]
+      convert (programSplit 1) `shouldReturn` [[0, 2, 4, 6, 8], [1, 3, 5, 7, 9]]
 
     it "Split 2 buf offset 2" $ do
-      convert (programSplit 2) `shouldReturn` [[0,2,4,6,8],[1,3,5,7,9]]
+      convert (programSplit 2) `shouldReturn` [[0, 1, 4, 5], [2, 3, 6, 7]]
+
+programSimple =
+  Prog
+    [Mapper "do" ["i", "a", "b", "c", "d"] (Int <$> [1, 2, 3, 4])]
+    ( PipedExp
+        [ App "generateSeq" True [Int 4, Int 3],
+          App "do" False []
+        ]
+    )
+
 programDefines =
   [ Shuffler "shift" ["index", "A", "Alen", "B", "Blen"] [ArrayGet (Var "A" False) (Modulo (Plus (Var "index" False) (Int 1)) (Var "Alen" False)), ArrayGet (Var "B" False) (Modulo (Minus (Plus (Var "index" False) (Var "Blen" False)) (Int 1)) (Var "Blen" False))],
     Shuffler "swap" ["index", "A", "Alen", "B", "Blen"] [ArrayGet (Var "B" False) (Modulo (Var "index" False) (Var "Blen" False)), ArrayGet (Var "A" False) (Modulo (Var "index" False) (Var "Alen" False))],
@@ -147,15 +162,15 @@ programSplit offset =
           App "id" False []
         ]
     )
+
 programSplitJoin offset =
   let args = Int <$> [2, offset]
-  in
-  Prog
-    programDefines
-    ( PipedExp
-        [ App "generateSeq" True [Int 1, Int 10],
-          App "split" True args,
-          App "haha" False [Int 10],
-          App "join" True args
-        ]
-    )
+   in Prog
+        programDefines
+        ( PipedExp
+            [ App "generateSeq" True [Int 1, Int 10],
+              App "split" True args,
+              App "haha" False [Int 10],
+              App "join" True args
+            ]
+        )
