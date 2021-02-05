@@ -16,7 +16,6 @@ import Data.Maybe
 import qualified Data.Set as Set
 import Language.GaiwanDefs
 
-
 data PipelineStep = PipelineStep
   { _outBuf :: [GPUBuffer],
     _expValue :: [Exp]
@@ -50,9 +49,9 @@ convertPipe (h : r) = reverse . dataToList <$> foldl convP (convH h) r
 -- (we need the SCode State monad to translate names into calls to the right kind of steps)
 convP :: SCode Pipeline -> Exp -> SCode Pipeline
 convP x a@Loop {} = convPLoop x a
-convP x a@(App "chunkBy" True [Int cnt]) = convPSplitter cnt <$> x
-convP x a@(App "join" True [Int cnt]) = x >>= convPJoin cnt
-convP x a@(App name True _) = error $ "Unknown builtin function name" ++ name
+convP x a@(App "split" True [Int numBuf, Int offset]) | numBuf > 0 && offset > 0 = convPSplitter numBuf offset <$> x
+convP x a@(App "join" True [Int numBuf, Int offset]) | numBuf > 0 && offset > 0 = x >>= convPJoin numBuf offset
+convP x a@(App name True _) = error $ "Unknown builtin function name " ++ name
 convP x a@(App n False _) = do
   t <- lookupDef n
   y <- x
@@ -61,8 +60,8 @@ convP x a@(App n False _) = do
     Just f@Mapper {} -> convPMapper y f a
     _ -> error $ "Unknown name " ++ show n
 
-convPJoin :: Int -> Pipeline -> SCode Pipeline
-convPJoin cnt x =  do
+convPJoin :: Int -> Int -> Pipeline -> SCode Pipeline
+convPJoin numBuf offset x = do
   let groupedBuffers = groupByCnt $ shuffledOutBuf x
   freshBuffers <- mapM (\((GPUBuffer _ s, _) : _) -> freshGPUBuffer s) groupedBuffers -- todo check if same buffer (use sum of sizes)
   return $
@@ -74,46 +73,64 @@ convPJoin cnt x =  do
               map
                 ( convToIf
                     . zipWith
-                      ( \index (buff, shuf) ->
-                          ( index,
-                            gpuBufferGet
-                              buff
-                              (subst indexVar shuf (Div (Minus indexVar (Int index)) (Int cnt))) -- TODO is mimus realy needed?
-                          )
-                      )
-                      [0 ..]
+                      indexPos
+                      [0 ..] -- bufferIndex
                 )
                 groupedBuffers
           }
       & doneExps %~ ((x ^. curExp) :) -- prepend the old curExp
       & shuffle .~ Nothing
   where
+    chunkSize = offset * numBuf
+    indexPos :: Int -> (GPUBuffer, Exp) -> (Int, Exp)
+    indexPos bufferIndex (buffer, sufffle) =
+      ( bufferIndex,
+        gpuBufferGet buffer $
+          Plus
+            (Times (Div indexVar (Int chunkSize)) (Int offset))
+            (Modulo indexVar (Int offset))
+      )
+
     groupByCnt :: [a] -> [[a]]
     groupByCnt [] = []
-    groupByCnt l | length l >= cnt = let (h, r) = splitAt cnt l in h : groupByCnt r
+    groupByCnt l | length l >= numBuf = let (h, rest) = splitAt numBuf l in h : groupByCnt rest
     groupByCnt l = error $ "could not join list that is not a multiple of the arg, left: " ++ show (length l)
     convToIf :: [(Int, Exp)] -> Exp
     convToIf [(_, e)] = e
-    convToIf ((index, e) : r) = If (IsEq (Modulo indexVar (Int cnt)) (Int index)) e (convToIf r)
+    convToIf ((bufferIndex, e) : rest) =
+      If
+        ( IsEq
+            (Modulo (Div indexVar (Int offset)) (Int numBuf))
+            (Int bufferIndex)
+        )
+        e
+        (convToIf rest)
 
-convPSplitter :: Int -> Pipeline -> Pipeline
-convPSplitter cnt x =
+convPSplitter :: Int -> Int -> Pipeline -> Pipeline
+convPSplitter numBuf offset x =
   x
     & shuffle
       ?~ concatMap
         ( \(buf, shuff) ->
             map
-              ( \offset ->
+              ( \bufferNum ->
                   ( buf,
-                    subst indexVar (indexPos offset) shuff
+                    subst indexVar (indexPos bufferNum) shuff
                   )
               )
-              [0 .. (cnt -1)]
+              [0 .. (numBuf -1)]
         )
         (shuffledOutBuf x)
   where
     indexPos :: Int -> Exp
-    indexPos offset = Plus (Times indexVar (Int cnt)) (Int offset)
+    indexPos bufferNum =
+      Plus
+        (Times (Div indexVar offsetE) (Int $ numBuf * offset))
+        ( Plus
+            (Int $ bufferNum * offset)
+            (Modulo indexVar offsetE)
+        )
+    offsetE = Int offset
 
 shuffledOutBuf :: Pipeline -> [(GPUBuffer, Exp)]
 shuffledOutBuf x = fromMaybe (emptySuffle (x ^. (curExp . outBuf))) $ x ^. shuffle
@@ -177,7 +194,7 @@ convPShuffler x (Shuffler name argnames bodys) (App n _ otherArgs) = x & shuffle
     appliedActualShuffs = map applyShuff actualShuffs
 
     applyShuff :: ((GPUBuffer, Exp), Exp) -> (GPUBuffer, Exp)
-    applyShuff ((buff, old), movement) = (buff, substMult [(indexVar, substMult nonGpuBufferArgs movement)] old)
+    applyShuff ((buff, old), movement) = (buff, subst indexVar (substMult nonGpuBufferArgs movement) old)
 
 -- A loop begins and ends with a stored array (for simplicity atm)
 -- TODO: make more simple

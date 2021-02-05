@@ -53,6 +53,7 @@ main = hspec $ do
     it "Correctly replaces stuff" $ do
       subst (Var "a" True) (Int 42) (Plus (Var "a" True) (Int 12)) `shouldBe` Plus (Int 42) (Int 12)
 
+  describe "Lib.convert (integration tests)" $ do
     it "computes the right value for an example program" $ do
       convert program `shouldReturn` [[-3, -5, -7, -9, -11, -13, -15, -17, -19, -21], [-1, -2, -3, -4, -5, -6, -7, -8, -9, -10]]
 
@@ -62,8 +63,17 @@ main = hspec $ do
     it "computes the right value for an example program with nested for" $ do
       convert program1 `shouldReturn` expectedLoopReturn
 
-    it "computes the right value for an example program with a split" $ do
-      convert programWithSplit `shouldReturn` [[0,11,20,13,40,15,60,17,80,19]]
+    it "SplitJoin 2 buf offset 1" $ do
+      convert (programSplitJoin 1) `shouldReturn` [[0,11,20,13,40,15,60,17,80,19]]
+
+    it "SplitJoin 2 buf offset 2" $ do
+      convert (programSplitJoin 2) `shouldReturn` [[0,10,12,13,40,50,16,17,80,90]]
+
+    it "SplitJoin 2 buf offset 3" $ do
+      convert (programSplitJoin 3) `shouldReturn` [[0,10,20,13,14,15,60,70,80,19]]
+
+    it "SplitJoin 2 buf offset 0" $ do
+      convert (programSplitJoin 0) `shouldThrow` anyException -- should type error???
 
 programDefines =
   [ Shuffler "shift" ["index", "A", "Alen", "B", "Blen"] [ArrayGet (Var "A" False) (Modulo (Plus (Var "index" False) (Int 1)) (Var "Alen" False)), ArrayGet (Var "B" False) (Modulo (Minus (Plus (Var "index" False) (Var "Blen" False)) (Int 1)) (Var "Blen" False))],
@@ -123,13 +133,15 @@ program1 =
         ]
     )
 
-programWithSplit =
+programSplitJoin offset =
+  let args = Int <$> [2, offset]
+  in
   Prog
     programDefines
     ( PipedExp
         [ App "generateSeq" True [Int 1, Int 10],
-          App "chunkBy" True [Int 2],
-          App "haha" False [Int 10],
-          App "join" True [Int 2]
+          App "split" True args,
+          App "haha" False [Int 10]
+        , App "join" True args
         ]
     )

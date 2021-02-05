@@ -4,7 +4,7 @@
 
 We use neoformat with:
 
-- Haskell: britanny
+- Haskell: Ormolu
 - All other: prettier
 
 ## Language Features
@@ -19,25 +19,24 @@ Gaiwan distinguishes between two kinds of operations: mapping and shuffling.
 
 #### Mapper
 
-If a mapper takes n input buffers, and has m output buffers, a mapper must
-generate an m-tuple of values derived from the n-tuple on the input.
+A mapper changes the values of items in a buffer by applying a function to them.
+This function combines one value of multiple buffers to produce one or more new
+values.
 
 #### Shufflers
 
-Move the data in one or multiple buffers. At the moment, shuffles only allow
-rearranging elements in buffers, but not between them.
-
-In the future, a mapper can be used to combine multiple buffers into one (or
-more) elements.
-
-Shufflers should always end with a semicolon separated list of array acesses
-where the accessesd arrrays are arguments.
+A shuffler rearanges items in buffers. The output of a shuffler can only contain
+values from the input buffers.
 
 ```
 shuffer(i, A, Alen, B, Blen){
   A[i] ; B[i] ; A[i]
 }
 ```
+
+#### `split` and `join` (A special kind of shufflers)
+
+Split and join serve to split and join multiple buffers at once in a zipping way
 
 ### Acting on multiple buffers
 

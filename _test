@@ -23,16 +23,20 @@ mapper haha(i,a,x,y){
 mapper id(i,x,y) {x;y}
 
 @generateSeq (1, 10 )
-  | doubler()
-  | 2:i { haha(i+1) | swap() | shift() | haha(-1) }
+  | @split(2,1)
+  | haha(10)
+  | @join(2,1)
   | id()
 HERE
 exit 0
 
   | 2:i { haha(i+1) | swap() | id() | shift() | haha(-1) }
 
-@generateSeq ( 2, 10 )
-  | haha(0+1) | swap() | shift() | haha(-1)
 
 
 
+@generateSeq (1, 10 )
+  | @split(2,1)
+  | haha(10)
+  | @join(2,1)
+  | id()
