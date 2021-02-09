@@ -53,6 +53,16 @@ main = hspec $ do
     it "Correctly replaces stuff" $ do
       subst (Var "a" True) (Int 42) (Plus (Var "a" True) (Int 12)) `shouldBe` Plus (Int 42) (Int 12)
 
+    it "Correctly simplifies stuff" $ do
+      mapM_
+        (\(a,b) -> (simplifyExp a) `shouldBe` b)
+        [
+          (Int 67, Int 67),
+          (Times (Int 2) (Int 25), Int 50),
+          (Times (Int 2) (Plus (Int 13) (Int 12)), Int 50),
+          (Times (Int 10) (Minus (Int 14) (Int 9)), Int 50)
+        ]
+
   describe "Lib.convert (integration tests)" $ do
     it "computes in the right order" $ do
       convert programSimple `shouldReturn` [[1, 1, 1], [2, 2, 2], [3, 3, 3], [4, 4, 4]]
