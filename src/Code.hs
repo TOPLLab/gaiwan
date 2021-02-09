@@ -36,7 +36,7 @@ data GPUAction
   deriving (Show)
 
 data Code = Code
-  { deviceCode :: String,
+  { deviceCode :: [String],
     hostCode :: [GPUAction],
     nameCount :: Int,
     defs :: [Stmt],
@@ -45,9 +45,13 @@ data Code = Code
   }
   deriving (Show)
 
+deviceCodeStr :: Code -> String
+deviceCodeStr = intercalate "\n\n" . reverse . deviceCode
+
 type SCode a = State Code a
 
 newtype KernelName = KernelName String deriving (Show)
+
 
 toOpenCL :: GPUAction -> OpenCLAction
 toOpenCL (CallKernel (KernelName n) args threads) = MakeKernel n (map toOpenCLBuf args) (Range threads 0 0)
@@ -58,15 +62,15 @@ toOpenCLBuf (GPUBuffer (GPUBufferName i) size) = CLGPUBuffer i size
 
 runCodeToList :: Code -> IO [[Integer ]]
 runCodeToList c = do
-    runner <- mkOpenRunnerInteger (deviceCode c)
+    runner <- mkOpenRunnerInteger (deviceCodeStr c)
     run runner (map toOpenCL $ hostCode c)
 
 dbgRender :: Code -> String
-dbgRender c = show (hostCode c) ++ "\n\n" ++ deviceCode c
+dbgRender c = show (hostCode c) ++ "\n\n" ++ deviceCodeStr c
 
 emptyCode =
   Code
-    { deviceCode = "",
+    { deviceCode = [],
       hostCode = [],
       nameCount = 0,
       defs = [],
@@ -118,7 +122,7 @@ addDeviceCode :: String -> SCode ()
 addDeviceCode s =
   modify
     ( \old@Code {deviceCode = dc} ->
-        old {deviceCode = dc ++ "\n\n" ++ s ++ "\n"}
+        old {deviceCode = s:dc}
     )
 
 -- Adds a kernel and retrns the name
