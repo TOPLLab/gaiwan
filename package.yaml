@@ -4,12 +4,13 @@ github: "TOPLLab/gaiwan"
 license: MIT
 author: "Robbert Gurdeep Singh"
 maintainer: "Robbert.GurdeepSingh@UGent.be"
-copyright: "2020 Author name here"
+copyright: "2020 Robbert Gurdeep Singh"
 
 extra-source-files:
   - README.md
   - ChangeLog.md
   - src/Language/Gaiwan.y
+  - src/Language/Tokens.x
 
 # Metadata used when publishing your package
 # synopsis:            Short description of your package
@@ -39,7 +40,7 @@ executables:
       - -threaded
       - -rtsopts
       - -with-rtsopts=-N
-      - -dynamic
+      #- -dynamic
     # Use dynamic for dynamic linking, remove for public
     dependencies:
       - gaiwan

@@ -7,9 +7,16 @@ let
     nodePackages.prettier
     haskellPackages.profiteur
   ];
+  stack-run = pkgs.writeShellScriptBin "stack-profile" ''
+    PATH=${pkgs.lib.makeBinPath needed}:"$PATH"
+    if [ -z $1 ]; then echo "give a program path!";exit 1; fi
+    set -ex
+    stack build
+    cat $1 | stack exec gaiwan-exe
+  '';
   stack-profile = pkgs.writeShellScriptBin "stack-profile" ''
     PATH=${pkgs.lib.makeBinPath needed}:"$PATH"
-    if [ -z $1 ]; then exit 0; fi
+    if [ -z $1 ]; then echo "Give a program path" ;exit 1; fi
     set -ex
     stack clean
     stack build --profile

@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 9978a467c8225ff4d33180a27f49f6e9ccdfc0b639467ccaf650e5421ec76755
+-- hash: de7d97726ed41e1a5f2b103b3e4fc17e99f8daa68e528773a98feec93eb22be7
 
 name:           gaiwan
 version:        0.1.0.0
@@ -13,7 +13,7 @@ homepage:       https://github.com/TOPLLab/gaiwan#readme
 bug-reports:    https://github.com/TOPLLab/gaiwan/issues
 author:         Robbert Gurdeep Singh
 maintainer:     Robbert.GurdeepSingh@UGent.be
-copyright:      2020 Author name here
+copyright:      2020 Robbert Gurdeep Singh
 license:        MIT
 license-file:   LICENSE
 build-type:     Simple
@@ -21,6 +21,7 @@ extra-source-files:
     README.md
     ChangeLog.md
     src/Language/Gaiwan.y
+    src/Language/Tokens.x
 
 source-repository head
   type: git
@@ -54,7 +55,7 @@ executable gaiwan-exe
       Paths_gaiwan
   hs-source-dirs:
       app
-  ghc-options: -threaded -rtsopts -with-rtsopts=-N -dynamic
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       OpenCL
     , array
