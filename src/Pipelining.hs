@@ -318,7 +318,6 @@ collectBuffers p = Set.toList $ foldl addO Set.empty p
 -- Convert a pipe into kernel specifications
 -- We build a Pipeline and
 
-arrayName num = "array" ++ show num
 
 -- Builtin var that represents the index
 indexVar = Var "index" True

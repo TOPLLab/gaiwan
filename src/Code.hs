@@ -18,9 +18,12 @@ module Code
 where
 
 import Control.Monad.State.Lazy
+import Data.Bifunctor
 import Data.Functor
 import Data.List
+import Data.Maybe
 import Language.Gaiwan
+import Language.GaiwanDefs
 import OpenCL
 
 newtype GPUBufferName = GPUBufferName Int deriving (Show, Ord, Eq)
@@ -52,7 +55,6 @@ type SCode a = State Code a
 
 newtype KernelName = KernelName String deriving (Show)
 
-
 toOpenCL :: GPUAction -> OpenCLAction
 toOpenCL (CallKernel (KernelName n) args threads) = MakeKernel n (map toOpenCLBuf args) (Range threads 0 0)
 toOpenCL (Code.AllocBuffer x) = OpenCL.AllocBuffer (toOpenCLBuf x)
@@ -60,10 +62,10 @@ toOpenCL (Code.ReadBuffer x) = OpenCL.ReadBuffer (toOpenCLBuf x)
 
 toOpenCLBuf (GPUBuffer (GPUBufferName i) size) = CLGPUBuffer i size
 
-runCodeToList :: Code -> IO [[Integer ]]
+runCodeToList :: Code -> IO [[Integer]]
 runCodeToList c = do
-    runner <- mkOpenRunnerInteger (deviceCodeStr c)
-    run runner (map toOpenCL $ hostCode c)
+  runner <- mkOpenRunnerInteger (deviceCodeStr c)
+  run runner (map toOpenCL $ hostCode c)
 
 dbgRender :: Code -> String
 dbgRender c = show (hostCode c) ++ "\n\n" ++ deviceCodeStr c
@@ -122,16 +124,17 @@ addDeviceCode :: String -> SCode ()
 addDeviceCode s =
   modify
     ( \old@Code {deviceCode = dc} ->
-        old {deviceCode = s:dc}
+        old {deviceCode = s : dc}
     )
 
 -- Adds a kernel and retrns the name
 -- Creates a kernel that sets the output of the i-th expression to the i-th output buffer
 addDeviceKernel :: (Exp -> SCode String) -> [Exp] -> [GPUBuffer] -> [GPUBuffer] -> SCode KernelName
-addDeviceKernel mkCode exps buffers buffersout = do
+addDeviceKernel mkCode initExps initBuffers initBuffersout = do
   ks <- kernels <$> get
   maybe realyAddKernel return $ lookup ks
   where
+    (exps, buffers, buffersout) = canonicalKernel (initExps, initBuffers, initBuffersout)
     lookup :: [(([Exp], [GPUBuffer], [GPUBuffer]), KernelName)] -> Maybe KernelName
     lookup ((h, n) : r) | matches h = Just n
     lookup (_ : r) = lookup r
@@ -148,6 +151,25 @@ addDeviceKernel mkCode exps buffers buffersout = do
             ++ intercalate "\n" (zipWith (gpuBufferAssign "int_index") buffersout code)
       registerKernel exps buffers buffersout name -- remember for next time
       return name
+
+canonicalKernel :: ([Exp], [GPUBuffer], [GPUBuffer]) -> ([Exp], [GPUBuffer], [GPUBuffer])
+canonicalKernel (e, buffers, buffersOut) = (map (simpleSubstMult requiredSubst) e, translatedBuffers, translatedBuffersOut)
+  where
+    canonicalBuffers = canonicalBufferKV $ buffers ++ buffersOut
+    translatedBuffers = map translateBuffer buffers
+    translatedBuffersOut = map translateBuffer buffersOut
+    translateBuffer x = fromJust $ lookup x canonicalBuffers
+    requiredSubst :: [(Exp, Exp)]
+    requiredSubst = map (bimap gpuBufferVar gpuBufferVar) canonicalBuffers
+
+canonicalBufferKV :: [GPUBuffer] -> [(GPUBuffer, GPUBuffer)]
+canonicalBufferKV buffers = removeDoubles $ zip buffers $ canonicalBufferNames buffers
+
+removeDoubles [] = []
+removeDoubles ((k, v) : r) = (k, v) : removeDoubles (filter (\(ko, _) -> ko /= k) r)
+
+canonicalBufferNames :: [GPUBuffer] -> [GPUBuffer]
+canonicalBufferNames buffers = zipWith (\a@(GPUBuffer _ s) newname -> GPUBuffer newname s) buffers $ GPUBufferName <$> [0 ..]
 
 mkKernelShell :: KernelName -> [GPUBuffer] -> String -> String
 mkKernelShell (KernelName name) args code = "void kernel " ++ name ++ "(" ++ argsStr ++ ")" ++ "{ \n" ++ code ++ " \n};"
@@ -168,6 +190,8 @@ gpuBufferAssign index buffer value = gpuBufferArgName buffer ++ "[" ++ index ++ 
 
 -- TODO make the stuff below nicer
 gpuBufferGet :: GPUBuffer -> Exp -> Exp
-gpuBufferGet (GPUBuffer (GPUBufferName name) _) = ArrayGet (Var ("array" ++ show name) True)
+gpuBufferGet buffer = ArrayGet (gpuBufferVar buffer)
+
+gpuBufferVar (GPUBuffer (GPUBufferName name) _) = Var ("array" ++ show name) True
 
 gpuBufferArgName (GPUBuffer (GPUBufferName name) _) = "int_array" ++ show name
