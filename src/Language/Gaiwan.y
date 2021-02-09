@@ -15,6 +15,8 @@ import           Language.GaiwanDefs
       function                                              { TokenFunction $$ _ }
       let                                                   { TokenLet      _ }
       in                                                    { TokenIn       _ }
+      if                                                    { TokenIf       _ }
+      else                                                  { TokenElse       _ }
       int                                                   { TokenInt $$   _ }
       var                                                   { TokenVar $$   _ }
       builtinvar                                            { TokenBuildinVar $$   _ }
@@ -32,6 +34,9 @@ import           Language.GaiwanDefs
       bracC                                                 { TokenSym '}'  _ }
       '['                                                   { TokenSym '['  _ }
       ']'                                                   { TokenSym ']'  _ }
+      '<'                                                   { TokenSym '>'  _ }
+      '>'                                                   { TokenSym '<'  _ }
+      '^'                                                   { TokenSym '^'  _ }
       ','                                                   { TokenSym ','  _ }
       pipe                                                  { TokenSym '|'  _ }
 
@@ -58,17 +63,23 @@ ExpApp : avar '(' explist ')'                               { mkApp $1 (reverse 
 ExpBaseL : ExpBase                                          { [$1] }
          | ExpBaseL semi ExpBase %prec PIPE                 { $3:$1 }
 
+BracExp : bracO ExpBase bracC                               { $2 }
+
 ExpBase : ExpApp                                            { $1 }
         | ExpBase '%' ExpBase                               { Modulo $1 $3 }
         | ExpBase '+' ExpBase                               { Plus $1 $3 }
         | ExpBase '-' ExpBase                               { Minus $1 $3 }
         | ExpBase '*' ExpBase                               { Times $1 $3 }
         | ExpBase '/' ExpBase                               { Div $1 $3 }
+        | ExpBase '>' ExpBase                               { IsGreater $1 $3 }
+        | ExpBase '<' ExpBase                               { IsGreater $3 $1 }
+        | ExpBase '^' ExpBase                               { Pow $1 $3 }
         | '(' ExpBase ')'                                   { $2 }
         | '-' ExpBase %prec NEG                             { Negate $2 }
         | int                                               { Int $1 }
         | ExpBase '[' ExpBase ']'                           { ArrayGet $1 $3 }
         | avar                                              { $1 }
+        | if '(' ExpBase ')'  BracExp else BracExp          { If $3 $5 $7 }
 
 ExpLoop : int ':' var  bracO pipedExp bracC                 { Loop (Int $1) $3 (reverse $5) }
         | avar ':' var  bracO pipedExp bracC                { Loop $1 $3 (reverse $5) }

@@ -17,11 +17,13 @@ tokens :-
   "--".*        ;
   mapper                           { ingest $ \s -> TokenFunction Mapper }
   shuffler                         { ingest $ \s -> TokenFunction Shuffler }
+  if                               { ingest $ \s -> TokenIf }
+  else                             { ingest $ \s -> TokenElse }
   let                              { ingest $ \s -> TokenLet }
   in                               { ingest $ \s -> TokenIn }
   $digit+                          { ingest $ \s -> TokenInt (read s) }
   ";"                              { ingest $ \s -> TokenSym ';' }
-  [\%\=\:\+\-\*\/\(\)\{\}\[\]\,\|]       { ingest $ \s -> TokenSym (head s) }
+  [\%\=\<\>\:\+\-\*\/\(\)\{\}\^\[\]\,\|]       { ingest $ \s -> TokenSym (head s) }
   $alpha [$alpha $digit \_ \']*    { ingest $ \s -> TokenVar s }
   @ [$alpha $digit \_ \']+    { ingest $ \s -> TokenBuildinVar (tail s) }
 
@@ -35,6 +37,8 @@ data FunctionType = Mapper | Shuffler deriving (Eq,Ord,Enum,Show)
 -- The token type:
 data Token =
   TokenFunction FunctionType    AlexPosn |
+  TokenIf               AlexPosn |
+  TokenElse             AlexPosn |
   TokenLet              AlexPosn |
   TokenIn               AlexPosn |
   TokenSym Char         AlexPosn |

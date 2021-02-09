@@ -51,6 +51,7 @@ convP :: SCode Pipeline -> Exp -> SCode Pipeline
 convP x a@Loop {} = convPLoop x a
 convP x a@(App "split" True [Int numBuf, Int offset]) | numBuf > 0 && offset > 0 = convPSplitter numBuf offset <$> x
 convP x a@(App "join" True [Int numBuf, Int offset]) | numBuf > 0 && offset > 0 = x >>= convPJoin numBuf offset
+convP x a@(App "join" True arg) = error $ "Join: bad arguments " ++ (show arg)
 convP x a@(App name True _) = error $ "Unknown builtin function name " ++ name
 convP x a@(App n False _) = do
   t <- lookupDef n
@@ -120,7 +121,7 @@ convPSplitter numBuf offset x =
             map
               ( \bufferNum ->
                   ( buf,
-                    subst indexVar (indexPos bufferNum) shuff,
+                    simpleSubst indexVar (indexPos bufferNum) shuff,
                     offset * (len `div` (numBuf * offset)) -- TODO: correct what to do with missing data???
                   )
               )
@@ -200,7 +201,7 @@ convPShuffler x (Shuffler name argnames bodys) (App n _ otherArgs) = x & shuffle
     appliedActualShuffs = map applyShuff actualShuffs
 
     applyShuff :: ((GPUBuffer, Exp, Int), Exp) -> (GPUBuffer, Exp, Int)
-    applyShuff ((buff, old, size), movement) = (buff, subst indexVar (substMult nonGpuBufferArgs movement) old, size)
+    applyShuff ((buff, old, size), movement) = (buff, simpleSubst indexVar (simpleSubstMult nonGpuBufferArgs movement) old, size)
 
 -- A loop begins and ends with a stored array (for simplicity atm)
 -- TODO: make more simple
@@ -225,7 +226,7 @@ convPLoop y (Loop (Int n) itterName steps) | n > 0 = do
                     _doneExps = []
                   }
             )
-            (map (subst (Var itterName False) (Int i)) steps)
+            (map (simpleSubst (Var itterName False) (Int i)) steps)
       )
       (reverse [0 .. (n -1)])
   let loopExpFull =
@@ -255,7 +256,7 @@ convPMapper :: Pipeline -> Stmt -> Exp -> SCode Pipeline
 convPMapper x@Pipeline {_shuffle = Nothing} (Mapper _ argNames bodys) (App n _ args) =
   return $
     x
-      & (curExp . expValue) .~ map (substMult $ zip ((`Var` False) <$> argNames) (indexVar : args ++ (x ^. (curExp . expValue)))) bodys
+      & (curExp . expValue) .~ map (simpleSubstMult $ zip ((`Var` False) <$> argNames) (indexVar : args ++ (x ^. (curExp . expValue)))) bodys
 -- If the last step was a shuffle, we must be carefull
 convPMapper x@Pipeline {_shuffle = Just s} (Mapper _ argNames bodys) (App n _ args) = do
   freshBuffers <- mapM (\(GPUBuffer _ _, _, size) -> freshGPUBuffer size) $ shuffledOutBuf x
@@ -267,7 +268,7 @@ convPMapper x@Pipeline {_shuffle = Just s} (Mapper _ argNames bodys) (App n _ ar
             _expValue =
               assert (length argNames) (length s + length args + 1) $ -- todo remove check
                 map
-                  ( substMult $
+                  ( simpleSubstMult $
                       zip ((`Var` False) <$> argNames) $ indexVar : args ++ map (\(b, i, _) -> gpuBufferGet b i) s
                   )
                   bodys -- expression is simple array access with map applied to shuffled dat

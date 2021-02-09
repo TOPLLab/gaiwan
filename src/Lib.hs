@@ -70,15 +70,14 @@ mkKernelBinOp a b op = do
 
 mkKernelCode :: Exp -> SCode String
 mkKernelCode Let {} = error "Let not yet supported!"
-mkKernelCode (Plus (Int a) (Int b)) = mkKernelCodeB (Int (a + b))
-mkKernelCode (Plus (Int 0) b) = mkKernelCodeB b -- move to simplify
-mkKernelCode (Plus b (Int 0)) = mkKernelCodeB b
 mkKernelCode (Plus a b) = mkKernelBinOp a b "+"
 mkKernelCode (Minus a b) = mkKernelBinOp a b "-"
 mkKernelCode (Times a b) = mkKernelBinOp a b "*"
 mkKernelCode (Div a b) = mkKernelBinOp a b "/"
 mkKernelCode (Modulo a b) = mkKernelBinOp a b "%"
+mkKernelCode (Pow a b) = mkKernelBinOp a b "^"
 mkKernelCode (IsEq a b) = mkKernelBinOp a b "=="
+mkKernelCode (IsGreater a b) = mkKernelBinOp a b "<"
 mkKernelCode (If cond texp fexp) = do
     condStr <- mkKernelCodeB cond
     restultStr <- mkKernelBinOp texp fexp ":"
