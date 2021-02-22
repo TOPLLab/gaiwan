@@ -318,7 +318,6 @@ collectBuffers p = Set.toList $ foldl addO Set.empty p
 -- Convert a pipe into kernel specifications
 -- We build a Pipeline and
 
-
 -- Builtin var that represents the index
 indexVar = Var "index" True
 
@@ -329,7 +328,6 @@ indexVar = Var "index" True
 convertPls :: (Exp -> SCode String) -> [Exp] -> SCode ()
 convertPls mkKernelCode exps = do
   plSteps <- convertPipe exps
-  mapM_ (addHostCode . AllocBuffer) $ collectBuffers plSteps
   foldlM convert [] plSteps -- fold keeps pervious output buffer
   mapM_ (addHostCode . ReadBuffer) (reverse $ _outBuf $ last plSteps)
   where
@@ -337,7 +335,7 @@ convertPls mkKernelCode exps = do
     convert inBuf x = do
       let argBufs = inBuf ++ (x ^. outBuf)
       fName <- addDeviceKernel mkKernelCode (_expValue x) argBufs (x ^. outBuf)
-      addHostCode $ CallKernel fName argBufs (gpuBufferSize $ last argBufs)
+      addHostCode $ CallKernel fName argBufs (x ^. outBuf) (gpuBufferSize $ last argBufs)
       return (x ^. outBuf)
 
 fstToVar (a, b) = (Var a False, b)

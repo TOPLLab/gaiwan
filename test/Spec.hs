@@ -5,6 +5,7 @@ import Language.GaiwanDefs
 import Lib (convert)
 import Test.Hspec
 import Test.QuickCheck
+import System.Timeout
 
 arbBinOp n m constructor = do
   a <- arbSizedExp n
@@ -36,6 +37,8 @@ instance Arbitrary Exp where
   shrink (Int 0) = []
   shrink (Int x) = [Int (x -1)]
 
+convertT prog = timeout 100000 $ convert prog
+
 main :: IO ()
 main = hspec $ do
   describe "Language.Gaiwan.subst" $ do
@@ -65,36 +68,36 @@ main = hspec $ do
 
   describe "Lib.convert (integration tests)" $ do
     it "computes in the right order" $ do
-      convert programSimple `shouldReturn` [[1, 1, 1], [2, 2, 2], [3, 3, 3], [4, 4, 4]]
+      convertT programSimple `shouldReturn` Just [[1, 1, 1], [2, 2, 2], [3, 3, 3], [4, 4, 4]]
 
     it "computes the right value for an example program" $ do
-      convert program
-        `shouldReturn` [ [-1, -2, -3, -4, -5, -6, -7, -8, -9, -10],
+      convertT program
+        `shouldReturn` Just [ [-1, -2, -3, -4, -5, -6, -7, -8, -9, -10],
                          [-3, -5, -7, -9, -11, -13, -15, -17, -19, -21]
                        ]
 
     it "computes the right value for an example program with nested for" $ do
-      convert program1Unrolled `shouldReturn` expectedLoopReturn
+      convertT program1Unrolled `shouldReturn` Just expectedLoopReturn
 
     it "computes the right value for an example program with nested for" $ do
-      convert program1 `shouldReturn` expectedLoopReturn
+      convertT program1 `shouldReturn` Just expectedLoopReturn
 
     it "SplitJoin 2 buf offset 1" $ do
-      convert (programSplitJoin 1) `shouldReturn` [[0, 11, 20, 13, 40, 15, 60, 17, 80, 19]]
+      convertT (programSplitJoin 1) `shouldReturn` Just [[0, 11, 20, 13, 40, 15, 60, 17, 80, 19]]
 
     it "SplitJoin 2 buf offset 2" $ do
-      convert (programSplitJoin 2) `shouldReturn` [[0, 10, 12, 13, 40, 50, 16, 17]]
+      convertT (programSplitJoin 2) `shouldReturn` Just [[0, 10, 12, 13, 40, 50, 16, 17]]
 
     it "SplitJoin 2 buf offset 3" $ do
-      convert (programSplitJoin 3) `shouldReturn` [[0, 10, 20, 13, 14, 15]]
+      convertT (programSplitJoin 3) `shouldReturn` Just [[0, 10, 20, 13, 14, 15]]
 
     it "SplitJoin 2 buf offset 0" $ do
-      convert (programSplitJoin 0) `shouldThrow` anyException -- should type error???
+      convertT (programSplitJoin 0) `shouldThrow` anyException -- should type error???
     it "Split 2 buf offset 1" $ do
-      convert (programSplit 1) `shouldReturn` [[0, 2, 4, 6, 8], [1, 3, 5, 7, 9]]
+      convertT (programSplit 1) `shouldReturn` Just [[0, 2, 4, 6, 8], [1, 3, 5, 7, 9]]
 
     it "Split 2 buf offset 2" $ do
-      convert (programSplit 2) `shouldReturn` [[0, 1, 4, 5], [2, 3, 6, 7]]
+      convertT (programSplit 2) `shouldReturn` Just [[0, 1, 4, 5], [2, 3, 6, 7]]
 
 programSimple =
   Prog

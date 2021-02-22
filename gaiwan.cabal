@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: de7d97726ed41e1a5f2b103b3e4fc17e99f8daa68e528773a98feec93eb22be7
+-- hash: e91e9e5877aadcde2bb90c76f57a3a2e7269d9abe369e27b0ff9b913dcf88b72
 
 name:           gaiwan
 version:        0.1.0.0
@@ -30,6 +30,9 @@ source-repository head
 library
   exposed-modules:
       Code
+      Code.Definitions
+      Code.Flatten
+      Code.SCode
       Language.Gaiwan
       Language.GaiwanDefs
       Language.Tokens

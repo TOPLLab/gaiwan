@@ -47,7 +47,6 @@ rangeArr (Range a b c) = [a, b, c]
 mkOpenRunnerInteger :: String -> IO (OpenCLRunner [Integer])
 mkOpenRunnerInteger = mkOpenRunner $ map toInteger
 
-
 mkOpenRunner :: ([CInt] -> a) -> String -> IO (OpenCLRunner a)
 mkOpenRunner convertor programSource = do
   -- Initialize OpenCL
@@ -79,6 +78,8 @@ mkOpenRunner convertor programSource = do
             waitlist = [],
             convertor = convertor
           }
+  --putStrLn programSource
+
   return $ OpenCLRunner (runAction initialData) Nothing
 
 -- Run with a convertor
@@ -87,6 +88,7 @@ run oclr list = do
   snd <$> foldM runAction (oclr, []) list
   where
     runAction (OpenCLRunner f _, acc) action = do
+      -- print action
       next@(OpenCLRunner _ v) <- f action
       case v of
         Just sf -> return (next, sf : acc)
