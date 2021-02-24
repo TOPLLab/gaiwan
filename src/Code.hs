@@ -30,6 +30,15 @@ import Language.Gaiwan
 import Language.GaiwanDefs
 import OpenCL
 
+toOpenCLProgram :: Code -> [OpenCLAction]
+toOpenCLProgram c = bufAlloc ++ prog
+  where
+    prog = map toOpenCL $ flattenBuffers $ hostCode c
+    bufAlloc = OpenCL.AllocBuffer <$> toList (collectBuffers prog)
+    collectBuffers ((MakeKernel _ bufs _) : r) = S.union (collectBuffers r) $ fromList bufs
+    collectBuffers (_ : r) = collectBuffers r
+    collectBuffers [] = empty
+
 toOpenCL :: GPUAction -> OpenCLAction
 toOpenCL (CallKernel (KernelName n) args _ threads) = MakeKernel n (map toOpenCLBuf args) (Range threads 0 0)
 toOpenCL (C.ReadBuffer x) = OpenCL.ReadBuffer (toOpenCLBuf x)
@@ -39,12 +48,7 @@ toOpenCLBuf (GPUBuffer (GPUBufferName i) size) = CLGPUBuffer i size
 runCodeToList :: Code -> IO [[Integer]]
 runCodeToList c = do
   runner <- mkOpenRunnerInteger (deviceCodeStr c)
-  let clProgram = map toOpenCL $ flattenBuffers $ hostCode c
-  run runner $ (OpenCL.AllocBuffer <$> toList (collectBuffers clProgram)) ++ clProgram
-  where
-    collectBuffers ((MakeKernel _ bufs _) : r) = L.foldr insert (collectBuffers r) bufs
-    collectBuffers (_ : r) = collectBuffers r
-    collectBuffers [] = empty
+  run runner $ toOpenCLProgram c
 
 dbgRender :: Code -> String
 dbgRender c = show (hostCode c) ++ "\n\n" ++ deviceCodeStr c
@@ -57,12 +61,13 @@ addDeviceKernel mkCode initExps initBuffers initBuffersout = do
   maybe realyAddKernel return $ lookup ks
   where
     (exps, buffers, buffersout) = canonicalKernel (initExps, initBuffers, initBuffersout)
+    matches e = (exps, buffers, buffersout) == e -- ignores names because previous line
+
     lookup :: [(([Exp], [GPUBuffer], [GPUBuffer]), KernelName)] -> Maybe KernelName
     lookup ((h, n) : r) | matches h = Just n
     lookup (_ : r) = lookup r
     lookup [] = Nothing
 
-    matches e = (exps, buffers, buffersout) == e -- todo make ignore names
     realyAddKernel :: SCode KernelName
     realyAddKernel = do
       name <- freshKernelName
