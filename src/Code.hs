@@ -66,7 +66,6 @@ addDeviceKernel mkCode initExps initBuffers initBuffersout = do
   where
     (exps, buffers, buffersout) = canonicalKernel (initExps, initBuffers, initBuffersout)
     matches e = (exps, buffers, buffersout) == e -- ignores names because previous line
-
     lookup :: [(([Exp], [GPUBuffer], [GPUBuffer]), KernelName)] -> Maybe KernelName
     lookup ((h, n) : r) | matches h = Just n
     lookup (_ : r) = lookup r
@@ -106,7 +105,6 @@ mkKernelShell :: KernelName -> [GPUBuffer] -> String -> String
 mkKernelShell (KernelName name) args code = "void kernel " ++ name ++ "(" ++ argsStr ++ ")" ++ "{ \n" ++ code ++ " \n};"
   where
     argsStr = intercalate ", " (map gpuBufferDecl args)
-
 
 gpuBufferDecl gpub@(GPUBuffer _ size) =
   "global int " ++ gpuBufferArgName gpub ++ "[" ++ show size ++ "]"
