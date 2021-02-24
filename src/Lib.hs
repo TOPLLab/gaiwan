@@ -48,7 +48,7 @@ someFunc3 = printG . parseGaiwan
       exitFailure
     printG (Right m) = do
       print m
-      print $ compile m
+      print $ Code.compile $ Lib.compile m
 
 
 compile (Prog defines main)=
@@ -58,7 +58,7 @@ compile (Prog defines main)=
 
 convert :: Program -> IO [[Integer]]
 convert program =
-  runCodeToList $ compile program
+  runCodeToList $ Lib.compile program
 
 funPrefix True = "int_"
 funPrefix False = "user_"

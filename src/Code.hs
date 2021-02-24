@@ -1,10 +1,11 @@
 module Code
   ( SCode,
     KernelName (),
-    GPUAction (..),
+    GPUAction (CallKernel, ReadBuffer), -- do not export AllocBuffer
     GPUBuffer (..),
     addDeviceCode,
     addDeviceKernel,
+    compile,
     addHostCode,
     gpuBufferGet,
     dbgRender,
@@ -30,25 +31,28 @@ import Language.Gaiwan
 import Language.GaiwanDefs
 import OpenCL
 
-toOpenCLProgram :: Code -> [OpenCLAction]
-toOpenCLProgram c = bufAlloc ++ prog
+compile :: Code -> (String, [GPUAction])
+compile c = (deviceCodeStr c, bufAlloc ++ prog)
   where
-    prog = map toOpenCL $ flattenBuffers $ hostCode c
-    bufAlloc = OpenCL.AllocBuffer <$> toList (collectBuffers prog)
-    collectBuffers ((MakeKernel _ bufs _) : r) = S.union (collectBuffers r) $ fromList bufs
+    prog = flattenBuffers $ hostCode c
+    bufAlloc = C.AllocBuffer <$> toList (collectBuffers prog)
+    collectBuffers ((CallKernel _ bufs _ _) : r) = S.union (collectBuffers r) $ fromList bufs
     collectBuffers (_ : r) = collectBuffers r
     collectBuffers [] = empty
 
 toOpenCL :: GPUAction -> OpenCLAction
 toOpenCL (CallKernel (KernelName n) args _ threads) = MakeKernel n (map toOpenCLBuf args) (Range threads 0 0)
 toOpenCL (C.ReadBuffer x) = OpenCL.ReadBuffer (toOpenCLBuf x)
+toOpenCL (C.AllocBuffer b) = OpenCL.AllocBuffer $ toOpenCLBuf b
 
 toOpenCLBuf (GPUBuffer (GPUBufferName i) size) = CLGPUBuffer i size
 
 runCodeToList :: Code -> IO [[Integer]]
 runCodeToList c = do
-  runner <- mkOpenRunnerInteger (deviceCodeStr c)
-  run runner $ toOpenCLProgram c
+  runner <- mkOpenRunnerInteger devCode
+  run runner $ map toOpenCL hostCode
+  where
+    (devCode, hostCode) = compile c
 
 dbgRender :: Code -> String
 dbgRender c = show (hostCode c) ++ "\n\n" ++ deviceCodeStr c

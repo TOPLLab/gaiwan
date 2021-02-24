@@ -18,4 +18,5 @@ newtype KernelName = KernelName String deriving (Show)
 data GPUAction
   = CallKernel KernelName [GPUBuffer] [GPUBuffer] Int -- name args threads
   | ReadBuffer GPUBuffer
+  | AllocBuffer GPUBuffer
   deriving (Show)
