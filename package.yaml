@@ -28,6 +28,10 @@ dependencies:
   - lens
   - containers
   - OpenCL
+  - aeson
+  - bytestring
+  - text
+  - vector
 
 library:
   source-dirs: src
@@ -56,4 +60,5 @@ tests:
     dependencies:
       - gaiwan
       - hspec
+      - raw-strings-qq # for serialization tests
       - QuickCheck

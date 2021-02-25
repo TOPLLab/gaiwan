@@ -15,12 +15,14 @@ module Code
     freshGPUBuffer,
     runCodeToList,
     gpuBufferSize,
+    serialize
   )
 where
 
 import Code.Definitions as C
 import Code.Flatten
 import Code.SCode
+import Code.Serialize
 import Data.Bifunctor
 import Data.Functor
 import Data.List as L hiding (delete, insert, union)
@@ -30,6 +32,8 @@ import Debug.Trace
 import Language.Gaiwan
 import Language.GaiwanDefs
 import OpenCL
+
+
 
 compile :: Code -> (String, [GPUAction])
 compile c = (deviceCodeStr c, bufAlloc ++ prog)

@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: e91e9e5877aadcde2bb90c76f57a3a2e7269d9abe369e27b0ff9b913dcf88b72
+-- hash: 740180dc74cdb848799390d07bc7bcb32693f648b6fe646b87a55d326a81f1a0
 
 name:           gaiwan
 version:        0.1.0.0
@@ -33,6 +33,7 @@ library
       Code.Definitions
       Code.Flatten
       Code.SCode
+      Code.Serialize
       Language.Gaiwan
       Language.GaiwanDefs
       Language.Tokens
@@ -45,11 +46,15 @@ library
       src
   build-depends:
       OpenCL
+    , aeson
     , array
     , base >=4.7 && <5
+    , bytestring
     , containers
     , lens
     , mtl
+    , text
+    , vector
   default-language: Haskell2010
 
 executable gaiwan-exe
@@ -61,18 +66,24 @@ executable gaiwan-exe
   ghc-options: -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       OpenCL
+    , aeson
     , array
     , base >=4.7 && <5
+    , bytestring
     , containers
     , gaiwan
     , lens
     , mtl
+    , text
+    , vector
   default-language: Haskell2010
 
 test-suite gaiwan-test
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
+      Code.SerializeSpec
+      CodeSpec
       Paths_gaiwan
   hs-source-dirs:
       test
@@ -80,11 +91,16 @@ test-suite gaiwan-test
   build-depends:
       OpenCL
     , QuickCheck
+    , aeson
     , array
     , base >=4.7 && <5
+    , bytestring
     , containers
     , gaiwan
     , hspec
     , lens
     , mtl
+    , raw-strings-qq
+    , text
+    , vector
   default-language: Haskell2010
