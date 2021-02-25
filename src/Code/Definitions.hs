@@ -13,10 +13,10 @@ data GPUBuffer = GPUBuffer GPUBufferName Int deriving (Show, Eq, Ord)
 
 gpuBufferSize (GPUBuffer _ s) = s
 
-newtype KernelName = KernelName String deriving (Show)
+newtype KernelName = KernelName String deriving (Show, Eq)
 
 data GPUAction
   = CallKernel KernelName [GPUBuffer] [GPUBuffer] Int -- name args threads
   | ReadBuffer GPUBuffer
   | AllocBuffer GPUBuffer
-  deriving (Show)
+  deriving (Show, Eq)
