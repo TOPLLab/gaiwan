@@ -25,13 +25,11 @@ data Program
 data Stmt
   = Mapper String [String] [Exp]
   | Shuffler String [String] [Exp]
-  | Splitter String [String] [Exp]
   deriving (Show)
 
 stmt :: forall t. Stmt -> (String -> [String] -> [Exp] -> t) -> t
 stmt (Mapper a b c) f = f a b c
 stmt (Shuffler a b c) f = f a b c
-stmt (Splitter a b c) f = f a b c
 
 stmtName :: Stmt -> String
 stmtName x = stmt x (\a b c -> a)
