@@ -15,7 +15,8 @@ module Code
     freshGPUBuffer,
     runCodeToList,
     gpuBufferSize,
-    serialize
+    serialize,
+    runCompiled,
   )
 where
 
@@ -24,6 +25,7 @@ import Code.Flatten
 import Code.SCode
 import Code.Serialize
 import Data.Bifunctor
+import qualified Data.ByteString.Lazy as BS
 import Data.Functor
 import Data.List as L hiding (delete, insert, union)
 import Data.Maybe
@@ -32,8 +34,6 @@ import Debug.Trace
 import Language.Gaiwan
 import Language.GaiwanDefs
 import OpenCL
-
-
 
 compile :: Code -> (String, [GPUAction])
 compile c = (deviceCodeStr c, bufAlloc ++ prog)
@@ -52,11 +52,19 @@ toOpenCL (C.AllocBuffer b) = OpenCL.AllocBuffer $ toOpenCLBuf b
 toOpenCLBuf (GPUBuffer (GPUBufferName i) size) = CLGPUBuffer i size
 
 runCodeToList :: Code -> IO [[Integer]]
-runCodeToList c = do
+runCodeToList c = uncurry runToList (compile c)
+
+runCompiled :: BS.ByteString -> IO (Maybe [[Integer]])
+runCompiled s =
+  maybe
+    (return Nothing)
+    (fmap Just . uncurry runToList)
+    $ deserialize s
+
+runToList :: String -> [GPUAction] -> IO [[Integer]]
+runToList devCode hostCode = do
   runner <- mkOpenRunnerInteger devCode
   run runner $ map toOpenCL hostCode
-  where
-    (devCode, hostCode) = compile c
 
 dbgRender :: Code -> String
 dbgRender c = show (hostCode c) ++ "\n\n" ++ deviceCodeStr c

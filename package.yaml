@@ -48,6 +48,7 @@ executables:
     # Use dynamic for dynamic linking, remove for public
     dependencies:
       - gaiwan
+      - bytestring
 
 tests:
   gaiwan-test:

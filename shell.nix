@@ -23,7 +23,7 @@ pkgs.mkShell {
         if [ -z $1 ]; then echo "give a program path!";exit 1; fi
         set -ex
         stack build
-        cat $1 | stack exec gaiwan-exe
+        stack exec gaiwan-exe eval $1
       '')
     (pkgs.writeShellScriptBin
       "stack-profile"
@@ -33,7 +33,7 @@ pkgs.mkShell {
         set -ex
         stack clean
         stack build --profile
-        cat $1 | stack exec --profile gaiwan-exe --RTS -- +RTS -p
+        stack exec --profile gaiwan-exe eval $1 --RTS -- +RTS -p
         profiteur gaiwan-exe.prof
       '')
   ];

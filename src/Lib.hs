@@ -1,64 +1,56 @@
 module Lib
-  ( someFunc,
+  ( run,
+    runCompiled,
+    Lib.compile,
+    checkParse,
     convert,
   )
 where
 
 import Code
+-- import OpenCL
+
+import Control.Monad
 import Control.Monad.State.Lazy
+import qualified Data.ByteString.Lazy as BS
 import Data.List
 import Data.Maybe
 import Language.Gaiwan
 import Language.GaiwanDefs
--- import OpenCL
 import Pipelining
 import System.Exit
 
-someFunc = someFunc2
+someFunc = Lib.compile
 
-someFunc1 :: String -> IO ()
-someFunc1 = printG . parseGaiwan
-  where
-    printG (Left m) = do
-      putStr "Parsing failed!\n"
-      putStr m
-      putStr "\n"
-      exitFailure
-    printG (Right m) = putStr $ show m
+eitherParseGaiwan a b s = either a b $ parseGaiwan s
 
-someFunc2 :: String -> IO ()
-someFunc2 = printG . parseGaiwan
-  where
-    printG (Left m) = do
-      putStr "Parsing failed!\n"
-      putStr m
-      putStr "\n"
-      exitFailure
-    printG (Right m) = do
-      result <- convert m
-      print result
+run :: String -> IO ()
+run =
+  eitherParseGaiwan
+    (\err -> print $ "Parsing failed: " ++ err)
+    (convert >=> print)
 
-someFunc3 :: String -> IO ()
-someFunc3 = printG . parseGaiwan
-  where
-    printG (Left m) = do
-      putStr "Parsing failed!\n"
-      putStr m
-      putStr "\n"
-      exitFailure
-    printG (Right m) = do
-      print m
-      print $ Code.compile $ Lib.compile m
+checkParse :: String -> Either String Program
+checkParse =
+  eitherParseGaiwan
+    (\err -> Left $ "Parsing failed: " ++ err)
+    Right
 
+-- Output a bytestring
+compile :: String -> Either String BS.ByteString
+compile =
+  eitherParseGaiwan
+    (\err -> Left $ "Parsing failed: " ++ err)
+    (Right . uncurry Code.serialize . Code.compile . mkCode) -- todo make either
 
-compile (Prog defines main)=
-    execCode $ do
-      mapM_ registerDef defines
-      convertMain main
+mkCode (Prog defines main) =
+  execCode $ do
+    mapM_ registerDef defines
+    convertMain main
 
 convert :: Program -> IO [[Integer]]
 convert program =
-  runCodeToList $ Lib.compile program
+  runCodeToList $ mkCode program
 
 funPrefix True = "int_"
 funPrefix False = "user_"
@@ -79,10 +71,9 @@ mkKernelCode (Pow a b) = mkKernelBinOp a b "^"
 mkKernelCode (IsEq a b) = mkKernelBinOp a b "=="
 mkKernelCode (IsGreater a b) = mkKernelBinOp a b "<"
 mkKernelCode (If cond texp fexp) = do
-    condStr <- mkKernelCodeB cond
-    restultStr <- mkKernelBinOp texp fexp ":"
-    return $ condStr ++ "?"  ++ restultStr
-
+  condStr <- mkKernelCodeB cond
+  restultStr <- mkKernelBinOp texp fexp ":"
+  return $ condStr ++ "?" ++ restultStr
 mkKernelCode (App f builtin args) = do
   callKind <- lookupDef f
   case callKind of
@@ -107,7 +98,6 @@ mkKernelCode (PipedExp expressions) = do
   convertPls mkKernelCodeB expressions
   return ""
 mkKernelCode unknownCode = error $ "Could not convert code:" ++ show unknownCode
-
 
 -- Add brackets
 mkKernelCodeB :: Exp -> SCode String
