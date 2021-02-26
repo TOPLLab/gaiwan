@@ -32,7 +32,6 @@ data RunCLData a = RunCLData
     queue :: CLCommandQueue,
     program :: CLProgram,
     gpuBuffers :: [(CLGPUBuffer, CLMem)], -- buffer mapping
-    kernels :: [(String, CLKernel)],
     waitlist :: [CLEvent], -- events to wait for
     convertor :: [CInt] -> a
   }
@@ -74,7 +73,6 @@ mkOpenRunner convertor programSource = do
             queue = q,
             program = program,
             gpuBuffers = [],
-            kernels = [],
             waitlist = [],
             convertor = convertor
           }
