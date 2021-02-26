@@ -1,10 +1,10 @@
 cabal-version: 1.12
 
--- This file has been generated from package.yaml by hpack version 0.34.3.
+-- This file has been generated from package.yaml by hpack version 0.34.4.
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 740180dc74cdb848799390d07bc7bcb32693f648b6fe646b87a55d326a81f1a0
+-- hash: 84d39cc3f419aeba43b5fa2cdfbf00e29cc74bc098aa959999181d01cb47ee7f
 
 name:           gaiwan
 version:        0.1.0.0
@@ -84,6 +84,7 @@ test-suite gaiwan-test
   other-modules:
       Code.SerializeSpec
       CodeSpec
+      LanguageSpec
       Paths_gaiwan
   hs-source-dirs:
       test

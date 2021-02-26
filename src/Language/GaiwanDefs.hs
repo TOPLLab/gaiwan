@@ -20,12 +20,12 @@ import Debug.Trace
 
 data Program
   = Prog [Stmt] Exp
-  deriving (Show)
+  deriving (Show,Eq)
 
 data Stmt
   = Mapper String [String] [Exp]
   | Shuffler String [String] [Exp]
-  deriving (Show)
+  deriving (Show,Eq)
 
 stmt :: forall t. Stmt -> (String -> [String] -> [Exp] -> t) -> t
 stmt (Mapper a b c) f = f a b c
