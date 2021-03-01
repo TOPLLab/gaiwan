@@ -1,5 +1,6 @@
 module CodeGen.OpenCL (mkOpenCLKernelCode) where
 
 import CodeGen.CLike
+import Language.GaiwanDefs
 
-mkOpenCLKernelCode = mkCodeB
+mkOpenCLKernelCode a@(PipedExp expressions) = mkCodeB a
