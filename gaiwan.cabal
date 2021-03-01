@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 84d39cc3f419aeba43b5fa2cdfbf00e29cc74bc098aa959999181d01cb47ee7f
+-- hash: 4017f06e700e089bd00e497503c8ed2fbcf6b7e5cdbe59906f4f37d00b40cb72
 
 name:           gaiwan
 version:        0.1.0.0
@@ -34,12 +34,14 @@ library
       Code.Flatten
       Code.SCode
       Code.Serialize
+      CodeGen.CLike
+      CodeGen.OpenCL
+      CodeGen.Pipelining
       Language.Gaiwan
       Language.GaiwanDefs
       Language.Tokens
       Lib
       OpenCL
-      Pipelining
   other-modules:
       Paths_gaiwan
   hs-source-dirs:

@@ -2,7 +2,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TupleSections #-}
 
-module Pipelining (Pipeline, collectBuffers, convertPls) where
+module CodeGen.Pipelining (Pipeline, collectBuffers, convertPls) where
 
 -- The idea is to transform a list of shuffles and maps into a list of maps (containing array)
 
