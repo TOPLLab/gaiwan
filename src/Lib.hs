@@ -46,18 +46,8 @@ compile =
 mkCode (Prog defines main) =
   execCode $ do
     mapM_ registerDef defines
-    convertMain main
+    mkOpenCLKernelCode  main
 
 convert :: Program -> IO [[Integer]]
 convert program =
   runCodeToList $ mkCode program
-
-funPrefix True = "int_"
-funPrefix False = "user_"
-
--- Convert main
-convertMain :: Exp -> SCode ()
-convertMain main =
-  void $ mkOpenCLKernelCode main
-
--- todo make less ugly
