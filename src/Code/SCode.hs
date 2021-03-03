@@ -23,12 +23,12 @@ import Language.GaiwanDefs
 type SCode a = State Code a
 
 data Code = Code
-  { deviceCode :: [String],
-    hostCode :: [GPUAction],
-    nameCount :: Int,
-    defs :: [Stmt],
-    kernels :: [(([Exp], [GPUBuffer], [GPUBuffer]), KernelName)], -- Put kernels herem
-    bufferCount :: Int
+  { deviceCode :: [String], -- Kernel definitions
+    hostCode :: [GPUAction], -- Plan for the host
+    nameCount :: Int, -- For unique kernel names
+    defs :: [Stmt], -- Defnitions to be used in the program
+    kernels :: [(([Exp], [GPUBuffer], [GPUBuffer]), KernelName)], -- Put kernels here
+    bufferCount :: Int -- For unique buffer names
   }
   deriving (Show)
 
