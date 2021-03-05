@@ -1,6 +1,7 @@
 module Lib
   ( run,
     runCompiled,
+    Lib.render,
     Lib.compile,
     checkParse,
     convert,
@@ -19,6 +20,7 @@ import Data.Maybe
 import Language.Gaiwan
 import Language.GaiwanDefs
 import System.Exit
+import Render
 
 someFunc = Lib.compile
 
@@ -51,3 +53,8 @@ mkCode (Prog defines main) =
 convert :: Program -> IO [[Integer]]
 convert program =
   runCodeToList $ mkCode program
+
+render :: String-> Either String BS.ByteString
+render = eitherParseGaiwan
+    (\err -> Left $ "Parsing failed: " ++ err)
+    (Right . Render.renderJSON)

@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 4017f06e700e089bd00e497503c8ed2fbcf6b7e5cdbe59906f4f37d00b40cb72
+-- hash: 08e4f47f6355cd34bf461e925f285c30050abcc39a0a0629ef600c4e37c0f380
 
 name:           gaiwan
 version:        0.1.0.0
@@ -37,11 +37,14 @@ library
       CodeGen.CLike
       CodeGen.OpenCL
       CodeGen.Pipelining
+      CodeGen.Render
       Language.Gaiwan
       Language.GaiwanDefs
       Language.Tokens
       Lib
       OpenCL
+      Render
+      RenderDefs
   other-modules:
       Paths_gaiwan
   hs-source-dirs:
@@ -87,6 +90,8 @@ test-suite gaiwan-test
       Code.SerializeSpec
       CodeSpec
       LanguageSpec
+      RenderSpec
+      TestPrograms
       Paths_gaiwan
   hs-source-dirs:
       test

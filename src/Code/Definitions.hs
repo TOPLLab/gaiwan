@@ -9,7 +9,7 @@ where
 
 newtype GPUBufferName = GPUBufferName Int deriving (Show, Ord, Eq)
 
-data GPUBuffer = GPUBuffer GPUBufferName Int deriving (Show, Eq, Ord)
+data GPUBuffer = GPUBuffer GPUBufferName Int deriving (Show, Ord, Eq)
 
 gpuBufferSize (GPUBuffer _ s) = s
 

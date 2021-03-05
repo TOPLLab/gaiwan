@@ -7,6 +7,7 @@ module Language.GaiwanDefs
     Exp (..),
     subst,
     substMult,
+    substGPUBuffers,
     stmt,
     stmtName,
     simplifyExp,
@@ -15,17 +16,17 @@ module Language.GaiwanDefs
   )
 where
 
+import Code.Definitions
 import Data.Maybe
-import Debug.Trace
 
 data Program
   = Prog [Stmt] Exp
-  deriving (Show,Eq)
+  deriving (Show, Eq)
 
 data Stmt
   = Mapper String [String] [Exp]
   | Shuffler String [String] [Exp]
-  deriving (Show,Eq)
+  deriving (Show, Eq)
 
 stmt :: forall t. Stmt -> (String -> [String] -> [Exp] -> t) -> t
 stmt (Mapper a b c) f = f a b c
@@ -48,6 +49,7 @@ data Exp
   | Negate Exp
   | PipedExp [Exp]
   | ArrayGet Exp Exp
+  | GPUBufferGet GPUBuffer Exp -- Not expressable in syntax
   | Loop Exp String [Exp]
   | If Exp Exp Exp
   | IsEq Exp Exp
@@ -78,6 +80,16 @@ substMult kv c = mapExp (_subst kv) c
           (map (simpleSubstMult $ delKey (Var varname False) kv) exps)
     -- otherwise, lookup in kv and replace
     _subst kv c = lookup c kv
+
+substGPUBuffers :: [(GPUBuffer, GPUBuffer)] -> Exp -> Exp
+substGPUBuffers [] c = c
+substGPUBuffers kv c = mapExp (_subst kv) c
+  where
+    -- loop: remove var
+    _subst kv c@(GPUBufferGet buf exp) = do
+      otherBuf <- lookup buf kv
+      return $ GPUBufferGet otherBuf (substGPUBuffers kv exp)
+    _subst kv c = Nothing
 
 --
 -- Execute till fixed point
