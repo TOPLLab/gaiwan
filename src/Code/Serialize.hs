@@ -13,6 +13,21 @@ import Data.Aeson
 import qualified Data.ByteString.Lazy as BS
 import Data.Text
 
+-- | Convert device and hostcode to a bytestring
+serialize :: String -> [GPUAction] -> BS.ByteString
+serialize deviceCode hostCode = encode (String "Gaiwan", deviceCode, hostCode)
+
+-- | Convert a bytestring to device and hostcode
+deserialize :: BS.ByteString -> Maybe (String, [GPUAction])
+deserialize e = decodeTriple e >>= checkMagic
+  where
+    decodeTriple :: BS.ByteString -> Maybe (String, String, [GPUAction])
+    decodeTriple = decode
+    checkMagic (magic, deviceCode, hostCode) | magic == "Gaiwan" = Just (deviceCode, hostCode)
+    checkMagic _ = Nothing
+
+-- JSON definition below
+
 instance ToJSON GPUAction where
   toJSON (ReadBuffer b) = object ["read" .= b]
   toJSON (CallKernel name bufs outbufs threads) =
@@ -54,14 +69,3 @@ instance ToJSON KernelName where
 instance FromJSON KernelName where
   parseJSON (String v) = return $ KernelName $ unpack v
   parseJSON _ = mzero
-
-serialize :: String -> [GPUAction] -> BS.ByteString
-serialize deviceCode hostCode = encode (String "Gaiwan", deviceCode, hostCode)
-
-deserialize :: BS.ByteString -> Maybe (String, [GPUAction])
-deserialize e = decodeTriple e >>= checkMagic
-  where
-    decodeTriple :: BS.ByteString -> Maybe (String, String, [GPUAction])
-    decodeTriple = decode
-    checkMagic (magic, deviceCode, hostCode) | magic == "Gaiwan" = Just (deviceCode, hostCode)
-    checkMagic _ = Nothing
