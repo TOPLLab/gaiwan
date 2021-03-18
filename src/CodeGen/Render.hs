@@ -84,14 +84,13 @@ mkCode2 t = error $ show t
 
 assert :: Bool -> a -> a
 assert True = id
-assert False = \_ -> error "Assertion Failed"  -- const (error "Assertion Failed")
+assert False = \_ -> error "Assertion Failed" -- const (error "Assertion Failed")
 
 mkKernel :: KernelName -> [GPUBuffer] -> [GPUBuffer] -> [KernelType] -> KernelPics
 mkKernel name kernelBuffers outBuffers code = [(name, _mkKernel)]
   where
     _mkKernel :: [GPUBuffer] -> State BufferLookup PicLevel
     _mkKernel actualBuffers = do
-
       ltb <- renamePictBuffer (zip actualBuffers kernelBuffers) <$> get
       hahaha <-
         mapM
@@ -104,11 +103,12 @@ mkKernel name kernelBuffers outBuffers code = [(name, _mkKernel)]
                   )
                   [0 .. size -1]
           )
-          (zip (
-                    map (\b -> fromJust $ lookup b (zip kernelBuffers actualBuffers)) outBuffers
-
-          -- Hier actual outbuffers oplijsten
-              ) code)
+          ( zip
+              ( map (\b -> fromJust $ lookup b (zip kernelBuffers actualBuffers)) outBuffers
+              -- Hier actual outbuffers oplijsten
+              )
+              code
+          )
       jjjj <- get
       return $ PicLevel (show name) hahaha
 

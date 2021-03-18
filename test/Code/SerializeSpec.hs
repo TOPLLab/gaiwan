@@ -46,10 +46,10 @@ spec = do
       )
       cases
     it "checks the magic" $ do
-        deserialize (BSC.pack [r|["Tea","",[{"read":[29,4]}]]|]) `shouldBe` Nothing
+      deserialize (BSC.pack [r|["Tea","",[{"read":[29,4]}]]|]) `shouldBe` Nothing
     it "ignores broken js" $ do
-        deserialize (BSC.pack [r|["Gaiwan","",[{"read":[29,4,10000]}]]|]) `shouldBe` Nothing
+      deserialize (BSC.pack [r|["Gaiwan","",[{"read":[29,4,10000]}]]|]) `shouldBe` Nothing
     it "ignores broken js" $ do
-        deserialize (BSC.pack [r|["Gaiwan","",[{"read":{}}]]|]) `shouldBe` Nothing
+      deserialize (BSC.pack [r|["Gaiwan","",[{"read":{}}]]|]) `shouldBe` Nothing
     it "ignores broken js" $ do
-        deserialize (BSC.pack [r|["Gaiwan","",[[]]|]) `shouldBe` Nothing
+      deserialize (BSC.pack [r|["Gaiwan","",[[]]|]) `shouldBe` Nothing
