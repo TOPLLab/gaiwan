@@ -89,6 +89,10 @@ jobs:
       run: |
         stack build -v --no-terminal --skip-ghc-check
 
+    - name: Test application
+      run: |
+        stack test -v --no-terminal --skip-ghc-check
+
     - name: List recursively . (after build)
       run: |
         ls -la -R .
