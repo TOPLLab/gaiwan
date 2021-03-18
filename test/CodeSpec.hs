@@ -3,9 +3,9 @@ module CodeSpec (spec) where
 import Data.Char
 import Language.GaiwanDefs
 import Lib (convert)
+import System.Timeout
 import Test.Hspec
 import Test.QuickCheck
-import System.Timeout
 
 arbBinOp n m constructor = do
   a <- arbSizedExp n
@@ -58,9 +58,8 @@ spec = do
 
     it "Correctly simplifies stuff" $ do
       mapM_
-        (\(a,b) -> (simplifyExp a) `shouldBe` b)
-        [
-          (Int 67, Int 67),
+        (\(a, b) -> (simplifyExp a) `shouldBe` b)
+        [ (Int 67, Int 67),
           (Times (Int 2) (Int 25), Int 50),
           (Times (Int 2) (Plus (Int 13) (Int 12)), Int 50),
           (Times (Int 10) (Minus (Int 14) (Int 9)), Int 50)
@@ -72,9 +71,10 @@ spec = do
 
     it "computes the right value for an example program" $ do
       convertT program
-        `shouldReturn` Just [ [-1, -2, -3, -4, -5, -6, -7, -8, -9, -10],
-                         [-3, -5, -7, -9, -11, -13, -15, -17, -19, -21]
-                       ]
+        `shouldReturn` Just
+          [ [-1, -2, -3, -4, -5, -6, -7, -8, -9, -10],
+            [-3, -5, -7, -9, -11, -13, -15, -17, -19, -21]
+          ]
 
     it "computes the right value for an example program with nested for" $ do
       convertT program1Unrolled `shouldReturn` Just expectedLoopReturn

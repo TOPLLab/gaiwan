@@ -79,12 +79,12 @@ runToList devCode hostCode = do
     addFrees l =
       l
         ++ L.foldr
-               ( \new a -> case new of
-                   OpenCL.AllocBuffer x -> OpenCL.FreeBuffer x:a
-                   _ -> a
-               )
-               []
-               l
+          ( \new a -> case new of
+              OpenCL.AllocBuffer x -> OpenCL.FreeBuffer x : a
+              _ -> a
+          )
+          []
+          l
 
 -- Adds a kernel and retrns the name
 -- Creates a kernel that sets the output of the i-th expression to the i-th output buffer

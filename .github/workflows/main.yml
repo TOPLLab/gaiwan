@@ -1,0 +1,100 @@
+name: Stack Test CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  ormolu:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: mrkkrp/ormolu-action@v2
+  btp:
+    name: Build and test
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        stack: [2.5.1]
+
+    env:
+      STACK_VERSON: ${{ matrix.stack }}
+
+    steps:
+    - uses: actions/checkout@v2
+      with:
+        fetch-depth: 0
+    - uses: cachix/install-nix-action@v12
+      with:
+        nix_path: nixpkgs=channel:nixos-unstable
+
+    - name: Prepare ~/.local/bin
+      run: |
+        mkdir -p ~/.local/bin
+        export PATH=~/.local/bin:$PATH
+
+# (1) -> Setup cache
+    - name: Cache ~/.stack
+      id: cache-stack
+      uses: actions/cache@v1
+      with:
+        path: |
+            ~/.stack
+            /nix/
+        key: stack-home-ubuntu16-test001-${{ hashFiles('**/*.yaml') }}
+        restore-keys: |
+          stack-home-ubuntu16-test001
+
+    - name: Cache .stack-work
+      id: cache-stack-work
+      uses: actions/cache@v1
+      with:
+        path: .stack-work
+        key: stack-work-ubuntu16-test001-${{ github.sha }}
+        restore-keys: |
+          stack-work-ubuntu16-test001-${{ github.sha }}
+          stack-work-ubuntu16-test001
+
+    - name: Cache Stack in ~/.local/bin
+      id: cache-stack-local-bin
+      uses: actions/cache@v1
+      with:
+        path: ~/.local/bin
+        key: stack-local-bin-ubuntu16-test001-${{ matrix.stack }}
+
+# (2) -> Prepare Stack
+    - name: Setup stack
+      if: steps.cache-stack-local-bin.outputs.cache-hit != 'true'
+      run: |
+        curl -L https://github.com/commercialhaskell/stack/releases/download/v$STACK_VERSON/stack-$STACK_VERSON-linux-x86_64.tar.gz | tar xz --wildcards --strip-components=1 -C ~/.local/bin '*/stack';
+
+# (3) -> Build binary
+    - name: List recursively . (before timestamp change)
+      run: |
+        ls -la -R .
+
+    - name: Update timestamps from git
+      run: |
+        git ls-tree -r --name-only HEAD | while read filename; do
+          TS="$(git log -1 --format="%ct" -- ${filename})"
+          echo $TS
+          touch "${filename}" -mt "$(date --date="@$TS" "+%Y%m%d%H%M.%S")"
+          echo "touch \"${filename}\" -mt \"$(date --date="@$TS" "+%Y%m%d%H%M.%S")\""
+        done
+
+    - name: List recursively . (before build)
+      run: |
+        ls -la -R .
+
+    - name: Build application
+      run: |
+        stack build -v --no-terminal --skip-ghc-check
+
+    - name: Test application
+      run: |
+        stack test --ta '--no-color --skip "/Code/Lib.convert (integration tests)/"'
+
+    - name: List recursively . (after build)
+      run: |
+        ls -la -R .

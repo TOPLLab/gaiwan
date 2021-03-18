@@ -285,9 +285,8 @@ convPLoop :: Bool -> SCode a Pipeline -> Exp -> SCode a Pipeline
 convPLoop _ y (Loop (Int 0) _ _) = y -- do nothing when 0 iterations
 convPLoop collapse y (Loop (Int n) itterName steps) | n > 0 = do
   foldl (convP collapse) y flattened
-      where
-          flattened =  concatMap (\i -> map (simpleSubst (Var itterName False) (Int i)) steps) [0..n-1]
-
+  where
+    flattened = concatMap (\i -> map (simpleSubst (Var itterName False) (Int i)) steps) [0 .. n -1]
 convPLoop _ y (Loop expr _ _) = error $ "Using loop with non-int value:" ++ show expr
 
 -- | Simple startdata assigned to specific buffers

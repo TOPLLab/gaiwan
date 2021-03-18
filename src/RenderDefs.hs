@@ -121,7 +121,6 @@ instance ToJSON NumberedLevel where
 instance ToJSON PicBufferId where
   toJSON (PicBufferId id) = toJSON id
 
-
 conv :: Pic -> [NumberedLevel]
 conv (Pic lvls) = map convLvl lvls
 

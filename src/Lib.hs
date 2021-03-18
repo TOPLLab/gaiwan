@@ -19,8 +19,8 @@ import Data.List
 import Data.Maybe
 import Language.Gaiwan
 import Language.GaiwanDefs
-import System.Exit
 import Render
+import System.Exit
 
 someFunc = Lib.compile
 
@@ -48,13 +48,14 @@ compile =
 mkCode (Prog defines main) =
   execCode $ do
     mapM_ registerDef defines
-    mkOpenCLKernelCode  main
+    mkOpenCLKernelCode main
 
 convert :: Program -> IO [[Integer]]
 convert program =
   runCodeToList $ mkCode program
 
-render :: String-> Either String BS.ByteString
-render = eitherParseGaiwan
+render :: String -> Either String BS.ByteString
+render =
+  eitherParseGaiwan
     (\err -> Left $ "Parsing failed: " ++ err)
     (Right . Render.renderJSON)

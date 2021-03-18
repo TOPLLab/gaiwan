@@ -12,8 +12,8 @@ import Test.QuickCheck
 import Text.RawString.QQ
 
 demoNameAndContents fname =
-              (\v -> (fname, v))
-                <$> (readFile $ "demo" </> fname)
+  (\v -> (fname, v))
+    <$> (readFile $ "demo" </> fname)
 
 spec = do
   describe "Language.Gaiwan (parser): check if all demos parse" $ do
