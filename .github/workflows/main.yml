@@ -11,7 +11,7 @@ jobs:
       - uses: actions/checkout@v2
       - uses: mrkkrp/ormolu-action@v2
   btp:
-    name: Build-Tag-Push
+    name: Build and test
     runs-on: ubuntu-latest
 
     strategy:
