@@ -9,4 +9,3 @@ import RenderDefs
 
 -- | Create a JSON representation of a program
 renderJSON = asJSON . render
-

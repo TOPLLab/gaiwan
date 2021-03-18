@@ -1,5 +1,7 @@
 module TestPrograms where
+
 import Language.GaiwanDefs
+
 programDefines =
   -- TODO consolidate
   [ Shuffler "shift" ["index", "A", "Alen", "B", "Blen"] [ArrayGet (Var "A" False) (Modulo (Plus (Var "index" False) (Int 1)) (Var "Alen" False)), ArrayGet (Var "B" False) (Modulo (Minus (Plus (Var "index" False) (Var "Blen" False)) (Int 1)) (Var "Blen" False))],
