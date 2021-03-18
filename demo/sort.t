@@ -12,12 +12,11 @@ mapper bitonic_select(i, round ,takePer, a, b){
 }
 
 mapper randomizer(i){
-    (i * 593) % 100
+    (i * 593) % 1000
 }
-
-@generateSeq(1,1024) |
+@generateSeq(1,33554432) |
     randomizer() |
-    10:round {
+    25:round {
         (round+1):step {
             @split(2,2^(round - step)) |
             bitonic_select(round,round - step + 1) |

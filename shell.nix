@@ -17,6 +17,16 @@ pkgs.mkShell {
         stack test --file-watch "$@"
       '')
     (pkgs.writeShellScriptBin
+      "stack-bench"
+      ''
+        PATH=${pkgs.lib.makeBinPath needed}:"$PATH"
+        set -ex
+        stack build
+        sed -i "s/^test-suite gaiwan-bench/benchmark gaiwan-bench/" gaiwan.cabal
+        stack bench
+        sed -i "s/^benchmark gaiwan-bench/test-suite gaiwan-bench/" gaiwan.cabal
+      '')
+    (pkgs.writeShellScriptBin
       "stack-run"
       ''
         PATH=${pkgs.lib.makeBinPath needed}:"$PATH"
@@ -32,8 +42,8 @@ pkgs.mkShell {
         if [ -z $1 ]; then echo "Give a action" ;exit 1; fi
         if [ -z $2 ]; then echo "Give a program path" ;exit 1; fi
         set -ex
-        stack clean
-        stack build --profile
+        # stack clean
+        stack build --profile gaiwan
         stack exec --profile gaiwan-exe $@ --RTS -- +RTS -p
         profiteur gaiwan-exe.prof
       '')

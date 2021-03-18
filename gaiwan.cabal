@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 08e4f47f6355cd34bf461e925f285c30050abcc39a0a0629ef600c4e37c0f380
+-- hash: fd78c6df7106eded081f8cc6bbfd82b96b4764f3ada3a7f190d3b08ae385c74b
 
 name:           gaiwan
 version:        0.1.0.0
@@ -76,6 +76,29 @@ executable gaiwan-exe
     , base >=4.7 && <5
     , bytestring
     , containers
+    , gaiwan
+    , lens
+    , mtl
+    , text
+    , vector
+  default-language: Haskell2010
+
+test-suite gaiwan-bench
+  type: exitcode-stdio-1.0
+  main-is: Main.hs
+  other-modules:
+      Paths_gaiwan
+  hs-source-dirs:
+      bench
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      OpenCL
+    , aeson
+    , array
+    , base >=4.7 && <5
+    , bytestring
+    , containers
+    , criterion
     , gaiwan
     , lens
     , mtl
