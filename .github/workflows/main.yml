@@ -12,7 +12,7 @@ jobs:
       - uses: mrkkrp/ormolu-action@v2
   btp:
     name: Build-Tag-Push
-    runs-on: ubuntu-16.04
+    runs-on: ubuntu-latest
 
     strategy:
       matrix:
