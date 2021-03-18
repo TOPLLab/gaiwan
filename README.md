@@ -87,9 +87,7 @@ The code can be benchmarked by using the `stack-bench` from the `nix-shell`
 Or by issueing:
 
 ```bash
-sed -i 's/^test-suite gaiwan-bench/benchmark gaiwan-bench/' gaiwan.cabal
 stack bench
-sed -i 's/^benchmark gaiwan-bench/test-suite gaiwan-bench/' gaiwan.cabal
 ```
 
 Always report the GPU with benchmark results

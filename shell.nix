@@ -22,9 +22,7 @@ pkgs.mkShell {
         PATH=${pkgs.lib.makeBinPath needed}:"$PATH"
         set -ex
         stack build
-        sed -i "s/^test-suite gaiwan-bench/benchmark gaiwan-bench/" gaiwan.cabal
         stack bench
-        sed -i "s/^benchmark gaiwan-bench/test-suite gaiwan-bench/" gaiwan.cabal
       '')
     (pkgs.writeShellScriptBin
       "stack-run"
