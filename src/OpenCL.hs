@@ -27,6 +27,7 @@ data Range = Range Int Int Int deriving (Show)
 data OpenCLAction
   = MakeKernel String [CLGPUBuffer] Range
   | AllocBuffer CLGPUBuffer
+  | FreeBuffer CLGPUBuffer
   | ReadBuffer CLGPUBuffer
   deriving (Show)
 
@@ -117,6 +118,10 @@ runAction d (AllocBuffer gpub@(CLGPUBuffer _ size)) = do
       vecSize = elemSize * size
   mem_in <- clCreateBuffer (context d) [CL_MEM_READ_WRITE] (vecSize, nullPtr)
   returnAction (d {gpuBuffers = (gpub, mem_in) : gpuBuffers d}) Nothing
+runAction d (FreeBuffer gpub) = do
+  let cbuf = getGpuBuffer d gpub
+  clReleaseMemObject cbuf
+  returnAction (d {gpuBuffers = filter (\(b,_)-> b /= gpub) (gpuBuffers d)}) Nothing
 runAction d (ReadBuffer gpub@(CLGPUBuffer _ size)) = do
   let elemSize = sizeOf (0 :: CInt)
       vecSize = elemSize * size

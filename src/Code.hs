@@ -74,7 +74,17 @@ runCompiled s =
 runToList :: String -> [GPUAction] -> IO [[Integer]]
 runToList devCode hostCode = do
   runner <- mkOpenRunnerInteger devCode
-  run runner $ map toOpenCL hostCode
+  run runner $ addFrees $ map toOpenCL hostCode
+  where
+    addFrees l =
+      l
+        ++ L.foldr
+               ( \new a -> case new of
+                   OpenCL.AllocBuffer x -> OpenCL.FreeBuffer x:a
+                   _ -> a
+               )
+               []
+               l
 
 -- Adds a kernel and retrns the name
 -- Creates a kernel that sets the output of the i-th expression to the i-th output buffer
