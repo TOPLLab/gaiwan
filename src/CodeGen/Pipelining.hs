@@ -284,42 +284,10 @@ emptySuffle = map (\b@(GPUBuffer _ s) -> (b, indexVar, s))
 convPLoop :: Bool -> SCode a Pipeline -> Exp -> SCode a Pipeline
 convPLoop _ y (Loop (Int 0) _ _) = y -- do nothing when 0 iterations
 convPLoop collapse y (Loop (Int n) itterName steps) | n > 0 = do
-  x <- y
-  let preLoopBufSufs = shuffledOutBuf x
-  -- Old data is coppies into this buffer (taking shuffle into account)
-  loopStartBuffers <- mapM (\(_, _, s) -> freshGPUBuffer s) preLoopBufSufs
-  -- The first step will read from loopStartBuffers and put them in firstOutputBuffers
-  firstOutputBuffers <- mapM (\(_, _, s) -> freshGPUBuffer s) preLoopBufSufs
-  loopBody <-
-    mapM
-      ( \i ->
-          foldl
-            (convP collapse)
-            ( return $ -- Initial = simply read the coppied buffer
-                Pipeline
-                  { _shuffle = Nothing,
-                    _curExp = copyBufExp loopStartBuffers firstOutputBuffers,
-                    _doneExps = []
-                  }
-            )
-            (map (simpleSubst (Var itterName False) (Int i)) steps)
-      )
-      (reverse [0 .. (n -1)])
-  let loopExpFull =
-        concatMap
-          (\bdy -> copyBufExp (bdy ^. (curExp . outBuf)) loopStartBuffers : dataToList bdy)
-          loopBody
-  return $
-    x
-      & shuffle .~ Nothing
-      & curExp .~ head loopExpFull -- first step of repeated loop
-      & doneExps
-        %~ ( \t ->
-               tail loopExpFull -- repeated loop
-                 ++ copyBufShufExp preLoopBufSufs loopStartBuffers : -- Copy to input buffer
-               (x ^. curExp) : -- Do last action before loop
-               t -- do all previous actions
-           )
+  foldl (convP collapse) y flattened
+      where
+          flattened =  concatMap (\i -> map (simpleSubst (Var itterName False) (Int i)) steps) [0..n-1]
+
 convPLoop _ y (Loop expr _ _) = error $ "Using loop with non-int value:" ++ show expr
 
 -- | Simple startdata assigned to specific buffers
