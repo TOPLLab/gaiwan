@@ -39,7 +39,9 @@ jobs:
       id: cache-stack
       uses: actions/cache@v1
       with:
-        path: ~/.stack
+        path: |
+            ~/.stack
+            /nix/
         key: stack-home-ubuntu16-test001-${{ hashFiles('**/*.yaml') }}
         restore-keys: |
           stack-home-ubuntu16-test001
