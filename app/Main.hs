@@ -14,8 +14,11 @@ main = do
       readFile file >>= either print BS.putStr . compile
     ["compile", file, fileout] ->
       readFile file >>= either print (BS.writeFile fileout) . compile
-    ["run", file] ->
-      BS.readFile file >>= runCompiled >>= print
+    ["run", file] -> do
+      res <- BS.readFile file >>= runCompiled
+      case res of
+        (Just ((h : _) : _)) -> print h
+        Nothing -> print "fail"
     ["eval", file] ->
       readFile file >>= run
     ["eval"] ->
