@@ -1,12 +1,57 @@
 { pkgs ? import <nixpkgs> { } }:
 let
+  ltpv = pkgs.stdenv.mkDerivation rec {
+    pname = "LTPV";
+    version = "0.0.1";
+
+    src = pkgs.fetchFromGitHub {
+      owner = "beardhatcode";
+      repo = "LTPV";
+      rev = "f93a8373d674b0e01744331c432ff19371c7d2bb";
+      sha256 = "sha256-xfu0MSzOuk6uNTi7A0FYcOqtS1rVrpm8Q9S8mFXiwdw=";
+    };
+
+    buildPhase = ''
+      echo $PATH
+      cp -r $src/src .
+      cd src
+      make all
+    '';
+
+    installPhase = ''
+      cd ..
+      mkdir -p $out/{lib,share,bin}
+      mv share/* $out/share
+      mv src/libLTPV.so $out/lib/
+      echo '#!/bin/sh' > $out/bin/ldpv
+      echo "LD_PRELOAD=$out/lib/libLTPV.so "'"$@"' >> $out/bin/ldpv
+      echo 'echo -e "\n\nReport captured, see:\n$out/share/ldpv/index.html"' >> $out/ldpv
+      chmod u+x $out/bin/ldpv
+    '';
+
+    buildInputs = [
+      pkgs.gnumake
+      pkgs.gcc
+      pkgs.opencl-clhpp # for cl2.hpp
+      pkgs.python3
+      pkgs.opencl-info
+      pkgs.ocl-icd # for -lOpenCL
+    ];
+
+
+
+  };
   needed = with pkgs; [
     stack
     ghc
     clang-tools # for C formatting
     nodePackages.prettier
     haskellPackages.profiteur # treemap of profile
-  ];
+    pkgs.opencl-clhpp # for cl2.hpp
+    pkgs.python3
+    pkgs.opencl-info
+    pkgs.ocl-icd # for -lOpenCL
+  ] ++ [ ltpv ];
 in
 pkgs.mkShell {
   buildInputs = needed ++ [
