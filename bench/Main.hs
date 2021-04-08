@@ -15,4 +15,4 @@ main = do
   -- We need to ensure that this is not counted in the benchmark
   let !c = BS.toStrict $ fromRight (error "Could not compile") $ compile code
   let !d = BS.fromStrict c
-  defaultMain [bgroup "sort" [bench "test" $ nfIO $ runCompiled d]]
+  defaultMain [bgroup "sort" [bench "test" $ nfIO $ runCompiled d >>= (\x -> return (head . head <$> x))]]
