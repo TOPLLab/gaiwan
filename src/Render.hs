@@ -1,6 +1,5 @@
 module Render
-  ( render,
-    renderJSON,
+  ( renderJSON,
   )
 where
 
