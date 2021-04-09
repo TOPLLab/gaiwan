@@ -62,9 +62,10 @@ mkOpenRunner convertor programSource = do
   (platform : _) <- clGetPlatformIDs
   (dev : _) <- clGetDeviceIDs platform CL_DEVICE_TYPE_ALL
   context <- clCreateContext [] [dev] print
-  q <- clCreateCommandQueue context dev [CL_QUEUE_PROFILING_ENABLE]
+  q <- clCreateCommandQueue context dev [CL_QUEUE_PROFILING_ENABLE,CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE]
 
   -- Initialize Kernel
+  --print $ head programSource
   program <- clCreateProgramWithSource context programSource
   Ex.catch
     (clBuildProgram program [dev] "")
@@ -85,6 +86,8 @@ mkOpenRunner convertor programSource = do
             waitlist = [],
             convertor = convertor
           }
+  --aa <- clGetProgramBinaries program
+  --print $ head $ head aa
   --putStrLn programSource
 
   return $ OpenCLRunner (runAction initialData) Nothing
@@ -96,8 +99,9 @@ run oclr list = do
   where
     -- Accumulator: (runner, collected return values)
     collectResults (OpenCLRunner f _, acc) action = do
-      -- print action
+      --print ("<", action)
       next@(OpenCLRunner _ v) <- f action
+      --print (">", action)
       case v of
         Just returnValue -> return (next, returnValue : acc) -- collect return
         Nothing -> return (next, acc)
@@ -128,7 +132,7 @@ runAction d (ReadBuffer gpub@(CLGPUBuffer _ size)) = do
   input <- mallocArray size :: IO (Ptr CInt)
   let cbuf = getGpuBuffer d gpub
   evt <- clEnqueueReadBuffer (queue d) cbuf True 0 vecSize (castPtr input) (waitlist d)
-  contents <- peekArray size input
+  contents <- peekArray (min size size) input
   -- send the read contents to the convertor in d
   returnAction (d {waitlist = [evt]}) $ Just (convertor d contents)
 
