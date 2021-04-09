@@ -23,10 +23,10 @@ let
       mkdir -p $out/{lib,share,bin}
       mv share/* $out/share
       mv src/libLTPV.so $out/lib/
-      echo '#!/bin/sh' > $out/bin/ldpv
-      echo "LD_PRELOAD=$out/lib/libLTPV.so "'"$@"' >> $out/bin/ldpv
-      echo 'echo -e "\n\nReport captured, see:\n$out/share/ldpv/index.html"' >> $out/ldpv
-      chmod u+x $out/bin/ldpv
+      echo '#!/bin/sh' > $out/bin/ltpv
+      echo "LD_PRELOAD=$out/lib/libLTPV.so "'"$@"' >> $out/bin/ltpv
+      echo "echo -e '\n\nReport captured, see:\n$out/share/ltpv/index.html'" >> $out/bin/ltpv
+      chmod u+x $out/bin/ltpv
     '';
 
     buildInputs = [
