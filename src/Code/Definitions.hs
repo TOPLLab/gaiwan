@@ -1,3 +1,5 @@
+{-# LANGUAGE MultiParamTypeClasses #-}
+
 module Code.Definitions
   ( GPUBufferName (..),
     GPUBuffer (..),

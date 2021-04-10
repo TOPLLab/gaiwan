@@ -4,7 +4,6 @@ module OpenCL
     Range (..),
     OpenCLRunner (), -- Constructor hidden
     mkOpenRunner,
-    mkOpenRunnerInteger,
     run,
   )
 where
@@ -38,7 +37,7 @@ data RunCLData a = RunCLData
     program :: CLProgram,
     gpuBuffers :: [(CLGPUBuffer, CLMem)], -- buffer mapping
     waitlist :: [CLEvent], -- events to wait for
-    convertor :: [CInt] -> a
+    convertor :: Int -> Ptr CInt -> IO a
   }
 
 -- | OpenCLRunner executor lastValue
@@ -49,14 +48,7 @@ rangeArr (Range a 0 0) = [a]
 rangeArr (Range a b 0) = [a, b]
 rangeArr (Range a b c) = [a, b, c]
 
--- | Make a runner that can run OpenCLAction s to an [Interger]
--- The argument is the OpenCL host code
-mkOpenRunnerInteger :: String -> IO (OpenCLRunner [Integer])
-mkOpenRunnerInteger = mkOpenRunner $ map toInteger
-
--- | Make a runner that can run OpenCLAction s to a chosen type
--- The converor of CInt to a must be suplied and the host code
-mkOpenRunner :: ([CInt] -> a) -> String -> IO (OpenCLRunner a)
+mkOpenRunner :: (Int -> Ptr CInt -> IO a) -> String -> IO (OpenCLRunner a)
 mkOpenRunner convertor programSource = do
   -- Initialize OpenCL
   (platform : _) <- clGetPlatformIDs
@@ -128,9 +120,9 @@ runAction d (ReadBuffer gpub@(CLGPUBuffer _ size)) = do
   input <- mallocArray size :: IO (Ptr CInt)
   let cbuf = getGpuBuffer d gpub
   evt <- clEnqueueReadBuffer (queue d) cbuf True 0 vecSize (castPtr input) (waitlist d)
-  contents <- peekArray size input
   -- send the read contents to the convertor in d
-  returnAction (d {waitlist = [evt]}) $ Just (convertor d contents)
+  r <- convertor d size input
+  returnAction (d {waitlist = [evt]}) $ Just r
 
 -- | Update the runner and return value
 returnAction :: RunCLData a -> Maybe a -> IO (OpenCLRunner a)

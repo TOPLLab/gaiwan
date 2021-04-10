@@ -52,10 +52,12 @@ mkCode (Prog defines main) =
 
 convert :: Program -> IO [[Integer]]
 convert program =
-  runCodeToList $ mkCode program
+  runOpenCL $ mkCode program
 
 render :: String -> Either String BS.ByteString
 render =
   eitherParseGaiwan
     (\err -> Left $ "Parsing failed: " ++ err)
     (Right . Render.renderJSON)
+
+runCompiled = runOpenCLCompiled

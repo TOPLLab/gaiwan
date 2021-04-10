@@ -115,7 +115,7 @@ mkKernel name kernelBuffers outBuffers code = [(name, _mkKernel)]
 render :: Program -> Pic
 render (Prog defines prog) = Pic foldProg
   where
-    (kernels, actions) = compileUnopt . execCode $ do
+    (kernels, actions) = compile . execCode $ do
       mapM_ registerDef defines
       mkCode prog
     foldProg :: [PicLevel]

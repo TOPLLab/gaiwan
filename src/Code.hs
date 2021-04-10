@@ -8,16 +8,14 @@ module Code
     addDeviceCode,
     addDeviceKernel,
     compile,
-    compileUnopt,
     addHostCode,
     execCode,
     lookupDef,
     registerDef,
     freshGPUBuffer,
-    runCodeToList,
+    deserialize,
     gpuBufferSize,
     serialize,
-    runCompiled,
   )
 where
 
@@ -34,7 +32,6 @@ import Data.Maybe
 import Data.Set as S (Set (..), delete, difference, empty, filter, foldr, fromList, insert, lookupMin, member, toList, union)
 import Language.Gaiwan
 import Language.GaiwanDefs
-import OpenCL
 
 compile :: Code a -> (a, [GPUAction])
 compile c = (deviceCode c, bufAlloc ++ prog)
@@ -44,47 +41,6 @@ compile c = (deviceCode c, bufAlloc ++ prog)
     collectBuffers ((CallKernel _ bufs _ _) : r) = S.union (collectBuffers r) $ fromList bufs
     collectBuffers (_ : r) = collectBuffers r
     collectBuffers [] = empty
-
-compileUnopt :: Code a -> (a, [GPUAction])
-compileUnopt c = (deviceCode c, prog) -- TODO add buffAlloc back TODO clean
-  where
-    prog = hostCode c
-    bufAlloc = C.AllocBuffer <$> toList (collectBuffers prog)
-    collectBuffers ((CallKernel _ bufs _ _) : r) = S.union (collectBuffers r) $ fromList bufs
-    collectBuffers (_ : r) = collectBuffers r
-    collectBuffers [] = empty
-
-toOpenCL :: GPUAction -> OpenCLAction
-toOpenCL (CallKernel (KernelName n) args _ threads) = MakeKernel n (map toOpenCLBuf args) (Range threads 0 0)
-toOpenCL (C.ReadBuffer x) = OpenCL.ReadBuffer (toOpenCLBuf x)
-toOpenCL (C.AllocBuffer b) = OpenCL.AllocBuffer $ toOpenCLBuf b
-
-toOpenCLBuf (GPUBuffer (GPUBufferName i) size) = CLGPUBuffer i size
-
-runCodeToList :: Code String -> IO [[Integer]]
-runCodeToList c = uncurry runToList (compile c)
-
-runCompiled :: BS.ByteString -> IO (Maybe [[Integer]])
-runCompiled s =
-  maybe
-    (return Nothing)
-    (fmap Just . uncurry runToList)
-    $ deserialize s
-
-runToList :: String -> [GPUAction] -> IO [[Integer]]
-runToList devCode hostCode = do
-  runner <- mkOpenRunnerInteger devCode
-  run runner $ addFrees $ map toOpenCL hostCode
-  where
-    addFrees l =
-      l
-        ++ L.foldr
-          ( \new a -> case new of
-              OpenCL.AllocBuffer x -> OpenCL.FreeBuffer x : a
-              _ -> a
-          )
-          []
-          l
 
 -- Adds a kernel and retrns the name
 -- Creates a kernel that sets the output of the i-th expression to the i-th output buffer
