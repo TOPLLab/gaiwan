@@ -69,6 +69,12 @@ spec = do
     it "computes in the right order" $ do
       convertT programSimple `shouldReturn` Just [[1, 1, 1], [2, 2, 2], [3, 3, 3], [4, 4, 4]]
 
+    it "computes in the right value when there is a reduction in buffers in the mapper" $ do
+      convertT (programSimplePlus "onlyfirst") `shouldReturn` Just [[1, 1, 1]]
+
+    it "computes in the right value when not all buffers are mapped" $ do
+      convertT (programSimplePlus "6onlyfirst") `shouldReturn` Just (replicate 6 [1, 1, 1])
+
     it "computes the right value for an example program" $ do
       convertT program
         `shouldReturn` Just
@@ -108,6 +114,16 @@ programSimple =
         ]
     )
 
+programSimplePlus extraMapper =
+  Prog
+    programDefines
+    ( PipedExp
+        [ App "generateSeq" True [Int 4, Int 3],
+          App "do" False [],
+          App extraMapper False []
+        ]
+    )
+
 programDefines =
   [ Shuffler "shift" ["index", "A", "Alen", "B", "Blen"] [ArrayGet (Var "A" False) (Modulo (Plus (Var "index" False) (Int 1)) (Var "Alen" False)), ArrayGet (Var "B" False) (Modulo (Minus (Plus (Var "index" False) (Var "Blen" False)) (Int 1)) (Var "Blen" False))],
     Shuffler "swap" ["index", "A", "Alen", "B", "Blen"] [ArrayGet (Var "B" False) (Modulo (Var "index" False) (Var "Blen" False)), ArrayGet (Var "A" False) (Modulo (Var "index" False) (Var "Alen" False))],
@@ -115,6 +131,9 @@ programDefines =
     Mapper "haha" ["i", "a", "x", "y"] [Times (Var "a" False) (Var "x" False), Plus (Var "a" False) (Var "y" False)],
     Mapper "inc" ["i", "a", "y"] [Plus (Var "a" False) (Var "y" False)],
     Mapper "id" ["i", "x", "y"] [Var "x" False, Var "y" False],
+    Mapper "onlyfirst" ["i", "x", "y", "b", "c"] [Var "x" False],
+    Mapper "6onlyfirst" ["i", "x", "y", "b", "c"] [Var "x" False, Var "x" False, Var "x" False, Var "x" False, Var "x" False, Var "x" False],
+    Mapper "do" ["i", "a", "b", "c", "d"] (Int <$> [1, 2, 3, 4]),
     Mapper "id1" ["i", "x"] [Var "x" False]
   ]
 
