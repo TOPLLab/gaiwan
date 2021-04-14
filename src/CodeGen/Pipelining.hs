@@ -16,11 +16,18 @@ import Data.Maybe
 import qualified Data.Set as Set
 import Language.GaiwanDefs
 
-data PipelineStep = PipelineStep
-  { _outBuf :: [GPUBuffer],
-    _expValue :: [Exp]
-  }
+type IndexedOffset = (Int, Int)
+
+-- | Set value Buffer[_ * i + _] = _
+--                               buff  [  a*i+ b ]= e
+data IndexedSet = IndexedSet GPUBuffer [(IndexedOffset, Exp)]
   deriving (Show)
+
+simpleSet buf exp = IndexedSet buf [((1, 0), exp)]
+
+newtype PipelineStep = PipelineStep [IndexedSet]
+  deriving (Show)
+
 
 makeLenses ''PipelineStep
 
@@ -90,17 +97,15 @@ convPJoin numBuf offset x = do
   return $
     x
       & curExp
-        .~ PipelineStep
-          { _outBuf = freshBuffers, -- Out is new buffer
-            _expValue =
-              map
-                ( convToIf
-                    . zipWith indexPos [0 ..] -- (index, groupedBuffer) -> (index )
-                )
-                groupedBuffers
-          }
+      .~ PipelineStep
+        ( zipWith
+            (\outBuffer group -> simpleSet outBuffer $ convToIf $ boehoe group)
+            freshBuffers
+            groupedBuffers
+        )
       & doneExps %~ ((x ^. curExp) :) -- prepend the old curExp
-      & shuffle .~ Nothing
+      & shuffle
+      .~ Nothing
   where
     groupedBuffers = groupByCnt $ shuffledOutBuf x
     -- Chop up in put array in bits of size numBuf
@@ -113,6 +118,9 @@ convPJoin numBuf offset x = do
     -- Number of in the element buffers before we start reading buffer 1 again
     chunkSize = offset * numBuf
 
+    -- TODO: rename
+    boehoe :: [(GPUBuffer, Exp, Int)] -> [(Int, Exp)]
+    boehoe = zipWith indexPos [0 ..]
     -- Creates a bufferGet that access the target buffer at the right position
     indexPos :: Int -> (GPUBuffer, Exp, Int) -> (Int, Exp)
     indexPos bufferIndex (buffer, shuff, len) =
@@ -244,17 +252,28 @@ convPShuffler x (Shuffler name argnames bodys) (App n _ otherArgs) = x & shuffle
     appliedActualShuffs :: [(GPUBuffer, Exp, Int)]
     appliedActualShuffs = map applyShuff extractedShuffs
 
+simpleExp :: PipelineStep -> Bool
+simpleExp (PipelineStep l) = all (\(IndexedSet _ x) -> is x) l
+  where is :: [(IndexedOffset, Exp)] -> Bool
+        is [((1,0), _)] = True
+        is _ = False
+        -- TODO rename
+
+simpleExpExtract :: PipelineStep -> [Exp]
+simpleExpExtract (PipelineStep l) = map (\(IndexedSet _ [((1,0), x)]) -> x) l
+
+
 -- | Execute a mapper
 -- If a mapper follows a mapper they are combined
 convPMapper :: Pipeline -> Stmt -> Exp -> SCode a Pipeline
-convPMapper x@Pipeline {_shuffle = Nothing} (Mapper _ argNames bodys) (App n _ args) =
+convPMapper x@Pipeline {_shuffle = Nothing} (Mapper _ argNames bodys) (App n _ args) | simpleExp (x ^. curExp) =
   return $
     x
-      & (curExp . expValue)
+      & curExp
         .~ map
           ( simpleSubstMult $
               zip ((`Var` False) <$> argNames) $
-                indexVar : args ++ (x ^. (curExp . expValue))
+                indexVar : args ++ simpleExpExtract (x ^. curExp)
           )
           bodys
 -- If the last step was a shuffle, we must be carefull
@@ -263,16 +282,15 @@ convPMapper x@Pipeline {_shuffle = Just s} (Mapper _ argNames bodys) (App n _ ar
   return $
     x
       & curExp
-        .~ PipelineStep
-          { _outBuf = freshBuffers, -- Out is new buffer
-            _expValue =
-              map
-                ( simpleSubstMult $
-                    zip ((`Var` False) <$> argNames) $
-                      indexVar : args ++ map (\(b, i, _) -> GPUBufferGet b i) s
-                )
-                bodys -- expression is simple array access with map applied to shuffled dat
-          }
+      .~ PipelineStep
+        ( zipWith simpleSet freshBuffers $
+            map
+              ( simpleSubstMult $
+                  zip ((`Var` False) <$> argNames) $
+                    indexVar : args ++ map (\(b, i, _) -> GPUBufferGet b i) s
+              )
+              bodys
+        )
       & doneExps %~ ((x ^. curExp) :) -- prepend the old curExp
       & shuffle .~ Nothing
 
@@ -297,9 +315,9 @@ emptyData buffers =
     { _shuffle = Nothing, -- select the i-th element of every buffer
       _curExp =
         PipelineStep
-          { _outBuf = buffers,
-            _expValue = replicate (length buffers) indexVar -- default value is just the index (there is no inBuf to read from)
-          },
+          ( zipWith simpleSet buffers $
+              replicate (length buffers) indexVar -- default value is just the index (there is no inBuf to read from)
+          ),
       _doneExps = []
     }
 
@@ -311,9 +329,9 @@ copyBufExp inBuf = copyBufShufExp $ map (\b@(GPUBuffer _ s) -> (b, indexVar, s))
 copyBufShufExp :: [(GPUBuffer, Exp, Int)] -> [GPUBuffer] -> PipelineStep
 copyBufShufExp inBufsAndShuffles target =
   PipelineStep
-    { _outBuf = target,
-      _expValue = map (\(buf, shuf, _) -> GPUBufferGet buf shuf) inBufsAndShuffles
-    }
+    ( zipWith simpleSet target $
+        map (\(buf, shuf, _) -> GPUBufferGet buf shuf) inBufsAndShuffles
+    )
 
 -- | Convert a pipeline data into a list of Pipeline steps
 -- Note this list must be reversed just before generating code
@@ -325,7 +343,8 @@ dataToList x@Pipeline {_shuffle = s, _curExp = p} = error $ "shuffle present " +
 collectBuffers :: [PipelineStep] -> [GPUBuffer]
 collectBuffers p = Set.toList $ foldl addO Set.empty p
   where
-    addO s PipelineStep {_outBuf = buffers} = foldr Set.insert s buffers
+    addO :: Set.Set GPUBuffer -> PipelineStep -> Set.Set GPUBuffer
+    addO s (PipelineStep indexedSet) = foldr (\(IndexedSet b _) -> Set.insert b) s indexedSet
 
 -- | Builtin var that represents the index
 indexVar = Var "index" True
