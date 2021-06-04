@@ -101,8 +101,8 @@ substGPUBuffers kv c = mapExp (_subst kv) c
       return $ GPUBufferGet otherBuf (substGPUBuffers kv exp)
     _subst kv c = Nothing
 
---
--- Execute till fixed point
+-- | Simplify till fixed point
+simplifyExp :: Exp -> Exp
 simplifyExp e =
   let rec = mapExp _simplifyExp e
    in if rec == e then e else simplifyExp rec
