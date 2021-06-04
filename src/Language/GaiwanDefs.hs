@@ -4,7 +4,7 @@
 module Language.GaiwanDefs
   ( Program (..),
     Stmt (..),
-    StmtType (..), 
+    StmtType (..),
     Exp (..),
     subst,
     substMult,
@@ -18,6 +18,7 @@ module Language.GaiwanDefs
 where
 
 import Code.Definitions
+import Data.Either
 import Data.Maybe
 
 data Program
@@ -28,6 +29,7 @@ data StmtType
   = GaiwanInt -- TODO: float
   | GaiwanTuple [StmtType]
   | GaiwanArrow StmtType StmtType
+  | GaiwanBuf Exp StmtType
   | TVar String
   deriving (Show, Eq)
 
@@ -152,3 +154,57 @@ mapExp fOrig e = fromMaybe (_mapExp e) (fOrig e)
     _mapExp e@(IsEq a b) = IsEq (f a) (f b)
     _mapExp e@(IsGreater a b) = IsGreater (f a) (f b)
     _mapExp x = x -- Int, Var
+
+data TypedStmt
+  = TMapper TypedStmt String [String] Exp
+  | TShaper TypedStmt String [String] Exp
+  | TReducer TypedStmt String [String] Exp Exp
+  deriving (Show, Eq)
+
+toTypedSmt :: Stmt -> Either String TypedStmt
+toTypedSmt (Mapper outType name [(indexArg, indexType), dataArg] body)
+  | fromMaybe GaiwanInt indexType == GaiwanInt =
+    Right $ TMapper (hahah outType healedArgs body) name (map fst healedArgs) body
+  where
+    healedArgs = [(indexArg, Just GaiwanInt), dataArg]
+
+hahah :: Maybe StmtType -> [(String, Maybe StmtType)] -> Exp -> TypedStmt
+hahah Nothing args = undefined
+hahah (Just expected) args = undefined
+
+typeOfBody :: t -> Exp -> Either String StmtType
+typeOfBody env Let {} = Left "let not yet supported"
+typeOfBody env (Plus a b) = typeOfMathBinop env a b
+typeOfBody env (Minus a b) = typeOfMathBinop env a b
+typeOfBody env (Modulo a b) = typeOfMathBinop env a b
+typeOfBody env (Times a b) = typeOfMathBinop env a b
+typeOfBody env (Pow a b) = typeOfMathBinop env a b
+typeOfBody env (Div a b) = typeOfMathBinop env a b
+typeOfBody env (IsEq a b) = typeOfMathBinop env a b
+typeOfBody env (IsGreater a b) = typeOfMathBinop env a b
+typeOfBody env (ArrayGet a b) = typeOfMathBinop env a b
+typeOfBody env (Int _) = Right GaiwanInt
+typeOfBody env (Tuple exps) =
+  if length itemTypes == length exps
+    then Right $ GaiwanTuple itemTypes
+    else Left "failed to type if"
+  where
+    itemTypes = rights $ map (typeOfBody env) exps
+typeOfBody env var@Var {} = typeOfVar env var
+typeOfBody env (Negate e) = case typeOfBody env e of
+  Right GaiwanInt -> Right GaiwanInt
+  _ -> Left "Cannot negate"
+typeOfBody env (If cond tBranch fBrach) = case map (typeOfBody env) [cond, tBranch, fBrach] of
+  [Right GaiwanInt, Right tT, Right fT] | tT == fT -> Right tT
+  _ -> Left "failed to type if"
+typeOfBody env PipedExp {} = Left "Cannot type a piped expression in a body"
+typeOfBody env App {} = Left "I don't know this applicaion"
+typeOfBody env GPUBufferGet {} = Left "Cannot use GPUBufferget in body"
+typeOfBody env Loop {} = Left "Cannot use loop in body"
+
+typeOfVar :: t -> Exp -> Either String StmtType
+typeOfVar = error "not implemented"
+
+typeOfMathBinop env a b = case map (typeOfBody env) [a, b] of
+  [Right GaiwanInt, Right GaiwanInt] -> Right GaiwanInt
+  _ -> Left "failed to type binop"
