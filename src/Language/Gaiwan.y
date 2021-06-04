@@ -104,7 +104,7 @@ type : int {GaiwanInt}
      | var {TVar $1 }
      | tuple '(' typelist ')'                               { GaiwanTuple (reverse $3) }
 
-{- No arrow type needed in the parser - }
+{- No arrow type needed in the parser -}
 
 typelist : type {[$1] }
          | typelist ',' type { $3 : $1 }
