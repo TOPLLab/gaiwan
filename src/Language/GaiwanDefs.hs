@@ -4,6 +4,7 @@
 module Language.GaiwanDefs
   ( Program (..),
     Stmt (..),
+    StmtType (..), 
     Exp (..),
     subst,
     substMult,
@@ -27,19 +28,21 @@ data StmtType
   = GaiwanInt -- TODO: float
   | GaiwanTuple [StmtType]
   | GaiwanArrow StmtType StmtType
-
-data Stmt
-  = Mapper (Maybe StmtType) String [String] Exp
-  | Shaper (Maybe StmtType) String [String] Exp
-  | Reducer (Maybe StmtType) String [String] Exp
+  | TVar String
   deriving (Show, Eq)
 
-stmt :: forall t. Stmt -> (String -> [String] -> [Exp] -> t) -> t
-stmt (Mapper a b c) f = f a b c
-stmt (Shuffler a b c) f = f a b c
+data Stmt
+  = Mapper (Maybe StmtType) String [(String, Maybe StmtType)] Exp
+  | Shaper (Maybe StmtType) String [(String, Maybe StmtType)] Exp
+  | Reducer (Maybe StmtType) String [(String, Maybe StmtType)] Exp Exp
+  deriving (Show, Eq)
+
+stmt :: forall t. Stmt -> (String -> [(String, Maybe StmtType)] -> Exp -> t) -> t
+stmt (Shaper _ a b c) f = f a b c
+stmt (Mapper _ a b c) f = f a b c
 
 stmtName :: Stmt -> String
-stmtName x = stmt x (\a b c -> a)
+stmtName x = stmt x (\name b c -> name)
 
 data Exp
   = Let String Exp Exp
@@ -51,6 +54,7 @@ data Exp
   | Pow Exp Exp
   | Div Exp Exp
   | Int Int
+  | Tuple [Exp]
   | Var String Bool
   | Negate Exp
   | PipedExp [Exp]
