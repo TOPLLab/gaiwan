@@ -23,9 +23,15 @@ data Program
   = Prog [Stmt] Exp
   deriving (Show, Eq)
 
+data StmtType
+  = GaiwanInt -- TODO: float
+  | GaiwanTuple [StmtType]
+  | GaiwanArrow StmtType StmtType
+
 data Stmt
-  = Mapper String [String] [Exp]
-  | Shuffler String [String] [Exp]
+  = Mapper (Maybe StmtType) String [String] Exp
+  | Shaper (Maybe StmtType) String [String] Exp
+  | Reducer (Maybe StmtType) String [String] Exp
   deriving (Show, Eq)
 
 stmt :: forall t. Stmt -> (String -> [String] -> [Exp] -> t) -> t
