@@ -18,7 +18,8 @@ mkCode (Minus a b) = mkBinOp a b "-"
 mkCode (Times a b) = mkBinOp a b "*"
 mkCode (Div a b) = mkBinOp a b "/"
 mkCode (Modulo a b) = mkBinOp a b "%"
-mkCode (Pow a b) = mkBinOp a b "^"
+mkCode (Pow (Int 2) b) = mkBinOp (Int 1) b "<<" -- TODO: what hapens if b is too large?
+mkCode (Pow a b) = (\args -> "pow(" ++ args ++ ")") <$> mkBinOp a b ","
 mkCode (IsEq a b) = mkBinOp a b "=="
 mkCode (IsGreater a b) = mkBinOp a b "<"
 mkCode (If cond texp fexp) = do
