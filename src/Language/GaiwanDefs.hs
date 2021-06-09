@@ -57,6 +57,7 @@ data Exp
   | Div Exp Exp
   | Int Int
   | Tuple [Exp]
+  | Select Exp Int
   | Var String Bool
   | Negate Exp
   | PipedExp [Exp]
@@ -161,48 +162,61 @@ data TypedStmt
   | TReducer StmtType String [String] Exp Exp
   deriving (Show, Eq)
 
-
 maybeGaiwanInt :: Maybe StmtType -> Bool
 maybeGaiwanInt indexType = fromMaybe GaiwanInt indexType == GaiwanInt
 
+-- >>> toTypedSmt (Mapper Nothing "lil" [("i",Nothing),("v", Just GaiwanInt)] (Var "v" False))
+
 toTypedSmt :: Stmt -> Either String TypedStmt
 toTypedSmt (Mapper outType name args@[(indexArg, indexType), (dataVarName, Just dataVarType)] body)
-  | maybeGaiwanInt indexType =
-    ( \x ->
-        TMapper
-          ( GaiwanArrow
-              (GaiwanBuf (Var "n" False) dataVarType)
-              (GaiwanBuf (Var "n" False) x)
-          )
-          name
-          (map fst args)
-          body
-    )
-      <$> typeWithExpection outType [(indexArg, GaiwanInt), (dataVarName, dataVarType)] body
-toTypedSmt (Shaper outType@(Just outTypeR) name args@((indexArg, indexType) : otherArgs) body)
-  | maybeGaiwanInt indexType =
-    ( \x ->
-        TMapper
-          (foldr (GaiwanArrow . snd) outTypeR realArgs)
-          name
-          (map fst args)
-          body
-    )
-      <$> typeWithExpectionAndJustArgs
-        outType
-        ( (indexArg, Just GaiwanInt) :otherArgs )
+  | maybeGaiwanInt indexType = do
+    retType <- typeWithExpection outType [(indexArg, GaiwanInt), (dataVarName, dataVarType)] body
+    return $
+      TMapper
+        ( GaiwanArrow
+            (GaiwanBuf (Var "n" False) dataVarType)
+            (GaiwanBuf (Var "n" False) retType)
+        )
+        name
+        (map fst args)
         body
-        where realArgs = zipWith   (\(argName,argType) num -> (argName,fromMaybe (TVar $ "avar" ++ show num) argType)) otherArgs  [1 ..]
+toTypedSmt (Shaper outType@(Just outTypeR@(GaiwanBuf _ elemType)) name args@((indexArg, indexType) : otherArgs) body)
+  | maybeGaiwanInt indexType = do
+    extraArgs <- mapM liftMaybeBufTuple otherArgs
+    typeWithExpectionAndJustArgs (Just elemType) ((indexArg, Just GaiwanInt) : otherArgs) body
+    return $
+      TShaper
+        (foldr (GaiwanArrow . snd) outTypeR extraArgs)
+        name
+        (map fst args)
+        body
+toTypedSmt (Reducer outType name args@[(indexArg, indexType), (accArg, accType), (dataArg, dataType@(Just dataTypeR))] initExp body)
+  | maybeGaiwanInt indexType = do
+    checkecAccType <- typeWithExpection accType [] initExp
+    checkedOutType <- justBuffOrLeft $ typeWithExpectionAndJustArgs outType [(indexArg, indexType), (accArg, Just checkecAccType), (dataArg, dataType)] body
+    return $
+      TReducer
+        (GaiwanArrow (GaiwanBuf (Var "n" True) dataTypeR) (GaiwanBuf (Int 1) checkedOutType))
+        name
+        (map fst args)
+        initExp
+        body
 
+justBuffOrLeft e@(Right (GaiwanBuf (Int 1) _)) = e
+justBuffOrLeft _ = Left "Output must be a buffer"
 
-liftEitherTuple :: (a, Either b c) -> Either b (a,c)
+liftEitherTuple :: (a, Either b c) -> Either b (a, c)
 liftEitherTuple (a, Right x) = Right (a, x)
 liftEitherTuple (a, Left x) = Left x
 
-liftMaybeTuple :: (a, Maybe b) -> Maybe (a,b)
+liftMaybeTuple :: (a, Maybe b) -> Maybe (a, b)
 liftMaybeTuple (a, Just x) = Just (a, x)
-liftMaybeTuple (a, nothing) = Nothing
+liftMaybeTuple (a, Nothing) = Nothing
 
+liftMaybeBufTuple :: (String, Maybe StmtType) -> Either String (String, StmtType)
+liftMaybeBufTuple (a, Just b@GaiwanBuf {}) = Right (a, b)
+liftMaybeBufTuple (a, Just _) = Left "non buffer type"
+liftMaybeBufTuple (a, Nothing) = Left "no type given"
 
 -- >>> mapM liftEitherTuple [(5, Right 1), (6, Right 2)] :: Either String [(Integer, Integer)]
 -- Right [(5,1),(6,2)]
@@ -214,11 +228,10 @@ liftMaybeTuple (a, nothing) = Nothing
 -- >>> mapM liftMaybeTuple [(5, Just 1), (6, Just 4)] :: Maybe [(Integer, Integer)]
 -- Just [(5,1),(6,4)]
 
-
 typeWithExpectionAndJustArgs :: Maybe StmtType -> [(String, Maybe StmtType)] -> Exp -> Either String StmtType
 typeWithExpectionAndJustArgs x args exp = maybe (Left "failed") b (mapM liftMaybeTuple args)
   where
-    b :: [(String, StmtType)] ->  Either String StmtType
+    b :: [(String, StmtType)] -> Either String StmtType
     b actualArgs = typeWithExpection x actualArgs exp
 
 typeWithExpection :: Maybe StmtType -> [(String, StmtType)] -> Exp -> Either String StmtType
@@ -241,6 +254,10 @@ typeOfBody env (IsEq a b) = typeOfMathBinop env a b
 typeOfBody env (IsGreater a b) = typeOfMathBinop env a b
 typeOfBody env (ArrayGet a b) = typeOfArrayAccess env a b -- FIXME
 typeOfBody env (Int _) = Right GaiwanInt
+typeOfBody env (Select t index) = case typeOfBody env t of
+  Right (GaiwanTuple types) | index > 0 && index < length types -> Right $ types !! index
+  Right _ -> Left "Can only select from Tuple"
+  Left a -> Left a
 typeOfBody env (Tuple exps) =
   if length itemTypes == length exps
     then Right $ GaiwanTuple itemTypes
@@ -252,7 +269,7 @@ typeOfBody env (Negate e) = case typeOfBody env e of
   Right GaiwanInt -> Right GaiwanInt
   _ -> Left "Cannot negate"
 typeOfBody env (If cond tBranch fBrach) = case mapM (typeOfBody env) [cond, tBranch, fBrach] of
-  Right [tC, tT, fT] | (tC == GaiwanInt) &&  (tT == fT) -> Right tT
+  Right [tC, tT, fT] | (tC == GaiwanInt) && (tT == fT) -> Right tT
   Right _ -> Left "Types of if did not match"
   Left x -> Left x
 typeOfBody env PipedExp {} = Left "Cannot type a piped expression in a body"
@@ -268,8 +285,7 @@ typeOfMathBinop env a b = case map (typeOfBody env) [a, b] of
   [Right GaiwanInt, Right GaiwanInt] -> Right GaiwanInt
   _ -> Left "failed to type binop"
 
-
 typeOfArrayAccess :: [(String, StmtType)] -> Exp -> Exp -> Either String StmtType
-typeOfArrayAccess env array index  = case mapM (typeOfBody env) [array, index] of
+typeOfArrayAccess env array index = case mapM (typeOfBody env) [array, index] of
   Right [GaiwanBuf _ ty, GaiwanInt] -> Right ty
   _ -> Left "failed to type array access"
