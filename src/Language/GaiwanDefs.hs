@@ -166,9 +166,21 @@ maybeGaiwanInt :: Maybe StmtType -> Bool
 maybeGaiwanInt indexType = fromMaybe GaiwanInt indexType == GaiwanInt
 
 -- >>> toTypedSmt (Mapper Nothing "lil" [("i",Nothing),("v", Just GaiwanInt)] (Var "v" False))
+-- Right (TMapper (GaiwanArrow (GaiwanBuf (Var "n" False) GaiwanInt) (GaiwanBuf (Var "n" False) GaiwanInt)) "lil" ["i","v"] (Var "v" False))
 
 toTypedSmt :: Stmt -> Either String TypedStmt
-toTypedSmt (Mapper outType name args@[(indexArg, indexType), (dataVarName, Just dataVarType)] body)
+toTypedSmt = toTypedSmtEnv []
+
+
+toTypedSmtEnv :: [(String, StmtType)] -> Stmt -> Either String TypedStmt
+toTypedSmtEnv env  (Abstraction outType name args []) = Left "Cannot make abstraction without content"
+toTypedSmtEnv env  (Abstraction outType name args parts) = do
+  things <- maybe (Left "all the arguments of an abstraction need to be set") Right $ mapM liftMaybeTuple args
+  partType <- mapM (toTypedSmtEnv $ things++env)  parts
+  outT <- doRightCase outType $ foldr1 mergeT $ map typedStmt partType
+  return $
+    TAbstraction outT name (map fst args) partType
+toTypedSmtEnv env  (Mapper outType name args@[(indexArg, indexType), (dataVarName, Just dataVarType)] body)
   | maybeGaiwanInt indexType = do
     retType <- typeWithExpection outType [(indexArg, GaiwanInt), (dataVarName, dataVarType)] body
     return $
@@ -182,8 +194,9 @@ toTypedSmt (Mapper outType name args@[(indexArg, indexType), (dataVarName, Just 
         body
 toTypedSmt (Shaper outType@(Just outTypeR@(GaiwanBuf _ elemType)) name args@((indexArg, indexType) : otherArgs) body)
   | maybeGaiwanInt indexType = do
-    extraArgs <- mapM liftMaybeBufTuple otherArgs
-    typeWithExpectionAndJustArgs (Just elemType) ((indexArg, Just GaiwanInt) : otherArgs) body
+    extraArgsBuf <- maybe (Left  "all the arguments of a shaper must have a specified buffer type") (Right . map snd) $ mapM liftMaybeTuple otherArgs
+    extraArgs <- mapM liftMaybeBuffElemType otherArgs
+    typeWithExpection (Just elemType) (((indexArg, GaiwanInt) : extraArgs)++env) body
     return $
       TShaper
         (foldr (GaiwanArrow . snd) outTypeR extraArgs)
@@ -192,8 +205,9 @@ toTypedSmt (Shaper outType@(Just outTypeR@(GaiwanBuf _ elemType)) name args@((in
         body
 toTypedSmt (Reducer outType name args@[(indexArg, indexType), (accArg, accType), (dataArg, dataType@(Just dataTypeR))] initExp body)
   | maybeGaiwanInt indexType = do
-    checkecAccType <- typeWithExpection accType [] initExp
-    checkedOutType <- justBuffOrLeft $ typeWithExpectionAndJustArgs outType [(indexArg, indexType), (accArg, Just checkecAccType), (dataArg, dataType)] body
+    checkecAccType <- typeWithExpection accType env initExp
+    outElemType <- bufferType1 outType
+    checkedOutType <- typeWithExpectionAndJustArgs outElemType ([(indexArg, Just GaiwanInt), (accArg, Just checkecAccType), (dataArg, dataType)]++map (second Just) env) body
     return $
       TReducer
         (GaiwanArrow (GaiwanBuf (Var "n" True) dataTypeR) (GaiwanBuf (Int 1) checkedOutType))
@@ -202,8 +216,34 @@ toTypedSmt (Reducer outType name args@[(indexArg, indexType), (accArg, accType),
         initExp
         body
 
-justBuffOrLeft e@(Right (GaiwanBuf (Int 1) _)) = e
-justBuffOrLeft _ = Left "Output must be a buffer"
+mergeT :: StmtType -> StmtType -> StmtType -- todo : triple + calculations
+mergeT ty1 ty2 =  if null theC then GaiwanArrow (fstT ty1) (lstT ty2) else error $ show (ty1,ty2,theC)
+  where
+    lstT (GaiwanArrow _ b) = lstT b
+    lstT a = a
+
+    fstT (GaiwanArrow b _) = b
+
+    theC = constraints (lstT ty1) (fstT ty2)
+    constraints :: StmtType -> StmtType -> [(String, StmtType)]
+    constraints (TVar a) (TVar b) | a == b = []
+    constraints (TVar a) b = [(a, b)]
+    constraints a (TVar b) = [(b, a)]
+    constraints GaiwanInt GaiwanInt = []
+    constraints (GaiwanTuple a) (GaiwanTuple b) = listConstraints a b
+    constraints (GaiwanArrow a1 a2) (GaiwanArrow b1 b2) = listConstraints [a1,a2] [b1, b2]
+    constraints (GaiwanBuf _ a) (GaiwanBuf _ b) = constraints a b
+
+    listConstraints :: [StmtType] -> [StmtType] -> [(String, StmtType)]
+    listConstraints (a:ar) (b:bs) = let prev = constraints a b in prev ++ listConstraints (map (apply prev) ar) (map (apply prev) bs)
+    listConstraints [] [] = []
+
+    apply :: [(String, StmtType)] -> StmtType -> StmtType
+    apply m (TVar a) = fromMaybe (TVar a) $ lookup a m
+    apply m GaiwanInt = GaiwanInt
+    apply m (GaiwanTuple a) = GaiwanTuple $ map (apply m) a
+    apply m (GaiwanArrow a1 a2) = GaiwanArrow (apply m a1) (apply m a2)
+    apply m (GaiwanBuf n a) = GaiwanBuf n $ apply m a
 
 liftEitherTuple :: (a, Either b c) -> Either b (a, c)
 liftEitherTuple (a, Right x) = Right (a, x)
@@ -213,10 +253,22 @@ liftMaybeTuple :: (a, Maybe b) -> Maybe (a, b)
 liftMaybeTuple (a, Just x) = Just (a, x)
 liftMaybeTuple (a, Nothing) = Nothing
 
-liftMaybeBufTuple :: (String, Maybe StmtType) -> Either String (String, StmtType)
-liftMaybeBufTuple (a, Just b@GaiwanBuf {}) = Right (a, b)
-liftMaybeBufTuple (a, Just _) = Left "non buffer type"
-liftMaybeBufTuple (a, Nothing) = Left "no type given"
+bufferType1 :: Maybe StmtType -> Either String (Maybe StmtType)
+bufferType1 (Just (GaiwanBuf (Int 1) b)) = Right $ Just b
+bufferType1 (Just GaiwanBuf {}) = Left "non buffer type with length one for out of reducer"
+bufferType1 (Just _) = Left "non buffer type"
+bufferType1 Nothing = Right Nothing
+
+bufferType :: Maybe StmtType -> Either String StmtType
+bufferType (Just (GaiwanBuf _ b)) = Right b
+bufferType (Just _) = Left "non buffer type"
+bufferType Nothing = Left "no type given"
+
+
+
+-- | Get the type of the elements of a buffer argument
+liftMaybeBuffElemType :: (String, Maybe StmtType) -> Either String (String, StmtType)
+liftMaybeBuffElemType (a, b) = (a,) <$> bufferType b
 
 -- >>> mapM liftEitherTuple [(5, Right 1), (6, Right 2)] :: Either String [(Integer, Integer)]
 -- Right [(5,1),(6,2)]
