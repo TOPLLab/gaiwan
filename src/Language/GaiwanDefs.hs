@@ -185,7 +185,7 @@ toTypedSmt = toTypedSmtEnv []
 toTypedSmtEnv :: [(String, StmtType)] -> Stmt -> Either String TypedStmt
 toTypedSmtEnv env  (Abstraction outType name args []) = Left "Cannot make abstraction without content"
 toTypedSmtEnv env  (Abstraction outType name args parts) = do
-  things <- maybe (Left "all the arguments of an abstractin need to be set") Right $ mapM liftMaybeTuple args
+  things <- maybe (Left "all the arguments of an abstraction need to be set") Right $ mapM liftMaybeTuple args
   partType <- mapM (toTypedSmtEnv $ things++env)  parts
   outT <- doRightCase outType $ foldr1 const $ map typedStmt partType
   return $
