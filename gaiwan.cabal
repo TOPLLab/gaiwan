@@ -34,10 +34,6 @@ library
       Code.Flatten
       Code.SCode
       Code.Serialize
-      CodeGen.CLike
-      CodeGen.OpenCL
-      CodeGen.Pipelining
-      CodeGen.Render
       Language.Gaiwan
       Language.GaiwanDefs
       Language.Tokens
@@ -83,39 +79,12 @@ executable gaiwan-exe
     , vector
   default-language: Haskell2010
 
-benchmark gaiwan-bench
-  type: exitcode-stdio-1.0
-  main-is: Main.hs
-  other-modules:
-      Paths_gaiwan
-  hs-source-dirs:
-      bench
-  ghc-options: -threaded -rtsopts -with-rtsopts=-N
-  build-depends:
-      OpenCL
-    , aeson
-    , array
-    , base >=4.7 && <5
-    , bytestring
-    , containers
-    , criterion
-    , gaiwan
-    , lens
-    , mtl
-    , text
-    , vector
-  default-language: Haskell2010
 
 test-suite gaiwan-test
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
-      Code.SerializeSpec
-      CodeSpec
       LanguageSpec
-      RenderSpec
-      TestPrograms
-      Paths_gaiwan
   hs-source-dirs:
       test
   ghc-options: -threaded -rtsopts -with-rtsopts=-N

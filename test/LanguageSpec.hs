@@ -21,10 +21,10 @@ v = Var "v" False
 
 spec = do
   describe "Language.GaiwanDefs (type)" $ do
-    it "notice missing var" $ do
+    it "notice missing var" $
       toTypedSmt (Mapper Nothing "nameOFaMapper" [("i", Nothing), ("v", Just GaiwanInt)] n) `shouldSatisfy` isLeft
 
-    it "types a simple mapper " $ do
+    it "types a simple mapper " $
       toTypedSmt (Mapper Nothing "nameOFaMapper" [("i", Nothing), ("v", Just GaiwanInt)] v)
         `shouldBe` Right
           ( TMapper
@@ -36,20 +36,17 @@ spec = do
               ["i", "v"]
               v
           )
-    it "types a simple shaper " $ do
-      toTypedSmt (Shaper (Just (GaiwanBuf n GaiwanInt)) "nameOFaMapper" [("i", Nothing), ("v", Just (GaiwanBuf n GaiwanInt))] v)
+    it "types a simple shaper " $
+      toTypedSmt (Shaper (Just (GaiwanBuf n GaiwanInt)) "nameOFaMapper" [("i", Nothing), ("v", Just (GaiwanBuf n GaiwanInt))] (ArrayGet v (Var "i" False)))
         `shouldBe` Right
           ( TShaper
-              ( GaiwanArrow
-                  (GaiwanBuf (Var "n" False) GaiwanInt)
-                  (GaiwanBuf (Var "n" False) GaiwanInt)
-              )
+              (GaiwanArrow (GaiwanBuf (Var "n" False) GaiwanInt) (GaiwanBuf (Var "n" False) GaiwanInt))
               "nameOFaMapper"
               ["i", "v"]
-              (Var "v" False)
+              (ArrayGet (Var "v" False) (Var "i" False))
           )
 
-    it "types a simple reducer " $ do
+    it "types a simple reducer " $
       toTypedSmt (Reducer (Just (GaiwanBuf (Int 1) GaiwanInt)) "nameOFaMapper" [("i", Nothing), ("acc", Nothing), ("v", Just GaiwanInt)] (Int 5) (Plus (Var "acc" False) v))
         `shouldBe` Right
           ( TReducer
@@ -60,11 +57,11 @@ spec = do
               (Plus (Var "acc" False) (Var "v" False))
           )
 
-    it "types a simple an empty abstraction" $ do
+    it "types a simple an empty abstraction" $
       toTypedSmt (Abstraction Nothing "nameOFanAbstraction" [("size", Just GaiwanInt)] [])
         `shouldSatisfy` isLeft
 
-    it "types a simple mapper in an abstraction" $ do
+    it "types a simple mapper in an abstraction" $
       toTypedSmt
         ( Abstraction
             Nothing
@@ -79,7 +76,7 @@ spec = do
               ["size"]
               [TMapper (GaiwanArrow (GaiwanBuf (Var "n" False) GaiwanInt) (GaiwanBuf (Var "n" False) GaiwanInt)) "nameOFaMapper" ["i", "v"] (Plus (Var "size" False) (Var "v" False))]
           )
-    it "types a two mapper in an abstraction" $ do
+    it "types a two mapper in an abstraction" $
       toTypedSmt
         ( Abstraction
             Nothing
@@ -98,6 +95,75 @@ spec = do
                 TMapper (GaiwanArrow (GaiwanBuf (Var "n" False) GaiwanInt) (GaiwanBuf (Var "n" False) GaiwanInt)) "nameOFaMapper" ["i", "v"] (Plus (Var "size" False) (Var "v" False))
               ]
           )
+
+    it "types a two mapper in an abstraction with var" $
+      toTypedSmt
+        ( Abstraction
+            Nothing
+            "nameOFanAbstraction"
+            [("size", Just GaiwanInt)]
+            [ Mapper Nothing "nameOFaMapper" [("i", Nothing), ("v", Just GaiwanInt)] (Plus (Var "size" False) v),
+              Mapper Nothing "nameOFaMapper" [("i", Nothing), ("v", Just (TVar "Out"))] v,
+              Mapper Nothing "nameOFaMapper" [("i", Nothing), ("v", Just (TVar "Out"))] (Tuple [v, v])
+            ]
+        )
+        `shouldBe` Right
+          ( TAbstraction
+              (GaiwanArrow (GaiwanBuf (Var "n" False) GaiwanInt) (GaiwanBuf (Var "n" False) (GaiwanTuple [GaiwanInt, GaiwanInt])))
+              "nameOFanAbstraction"
+              ["size"]
+              [ TMapper
+                  (GaiwanArrow (GaiwanBuf (Var "n" False) GaiwanInt) (GaiwanBuf (Var "n" False) GaiwanInt))
+                  "nameOFaMapper"
+                  ["i", "v"]
+                  (Plus (Var "size" False) (Var "v" False)),
+                TMapper
+                  (GaiwanArrow (GaiwanBuf (Var "n" False) (TVar "Out")) (GaiwanBuf (Var "n" False) (TVar "Out")))
+                  "nameOFaMapper"
+                  ["i", "v"]
+                  (Var "v" False),
+                TMapper
+                  (GaiwanArrow (GaiwanBuf (Var "n" False) (TVar "Out")) (GaiwanBuf (Var "n" False) (GaiwanTuple [TVar "Out", TVar "Out"])))
+                  "nameOFaMapper"
+                  ["i", "v"]
+                  (Tuple [Var "v" False, Var "v" False])
+              ]
+          )
+
+    it "types a two mapper in an abstraction with var" $
+      toTypedSmt
+        ( Abstraction
+            Nothing
+            "nameOFanAbstraction"
+            [("size", Just GaiwanInt)]
+            [ Shaper
+                (Just (GaiwanBuf n (GaiwanTuple [TVar "A", TVar "A"])))
+                "nameOFaMapper"
+                [ ("i", Nothing),
+                  ("v", Just (GaiwanBuf (Times (Int 2) n) (TVar "A")))
+                ]
+                $ Tuple
+                  [ ArrayGet v (Times (Int 2) (Var "i" False)),
+                    ArrayGet v (Plus (Int 1) (Times (Int 2) (Var "i" False)))
+                  ],
+              Shaper
+                (Just (GaiwanBuf n (GaiwanTuple [TVar "B", TVar "B"])))
+                "nameOFaMapper"
+                [("i", Nothing), ("v", Just (GaiwanBuf (Times (Int 2) n) (TVar "B")))]
+                $ Tuple
+                  [ ArrayGet v (Times (Int 2) (Var "i" False)),
+                    ArrayGet v (Plus (Int 1) (Times (Int 2) (Var "i" False)))
+                  ],
+              Mapper
+                Nothing
+                "nameOFaMapper"
+                [ ("i", Nothing),
+                  ("v", Just (GaiwanTuple [GaiwanTuple [GaiwanInt, GaiwanInt], GaiwanTuple [GaiwanInt, GaiwanInt]]))
+                ]
+                (Plus (Select (Select v 1) 1) (Select (Select v 1) 0))
+            ]
+        )
+        `shouldBe` Left ""
 
   describe "Language.Gaiwan (parser): check if all demos parse" $ do
     files <- runIO $ listDirectory "demo"

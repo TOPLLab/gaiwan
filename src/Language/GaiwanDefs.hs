@@ -6,6 +6,7 @@ module Language.GaiwanDefs
   ( Program (..),
     Stmt (..),
     StmtType (..),
+    GStmtType (..),
     Exp (..),
     TypedStmt (..),
     subst,
@@ -29,13 +30,16 @@ data Program
   = Prog [Stmt] Exp
   deriving (Show, Eq)
 
-data StmtType
+data GStmtType a
   = GaiwanInt -- TODO: float
-  | GaiwanTuple [StmtType]
-  | GaiwanArrow StmtType StmtType
-  | GaiwanBuf Exp StmtType
-  | TVar String
+  | GaiwanTuple [GStmtType a]
+  | GaiwanArrow (GStmtType a) (GStmtType a)
+  | GaiwanBuf Exp(GStmtType a)
+  | TVar a
   deriving (Show, Eq)
+
+
+type StmtType = GStmtType String
 
 data TypedStmt
   = TMapper StmtType String [String] Exp
@@ -205,12 +209,12 @@ toTypedSmtEnv env  (Mapper outType name args@[(indexArg, indexType), (dataVarNam
         body
 toTypedSmtEnv env  (Shaper outType@(Just outTypeR@(GaiwanBuf _ elemType)) name args@((indexArg, indexType) : otherArgs) body)
   | maybeGaiwanInt indexType = do
-    extraArgsBuf <- maybe (Left  "all the arguments of a shaper must have a specified buffer type") (Right . map snd) $ mapM liftMaybeTuple otherArgs
+    extraArgsBuf <- maybe (Left  "all the arguments of a shaper must have a specified buffer type") Right $ mapM liftMaybeTuple otherArgs
     extraArgs <- mapM liftMaybeBuffElemType otherArgs
-    typeWithExpection (Just elemType) (((indexArg, GaiwanInt) : extraArgs)++env) body
+    typeWithExpection (Just elemType) (((indexArg, GaiwanInt) : extraArgsBuf)++env) body
     return $
       TShaper
-        (foldr GaiwanArrow outTypeR extraArgsBuf)
+        (foldr (GaiwanArrow . snd) outTypeR extraArgsBuf)
         name
         (map fst args)
         body
@@ -227,16 +231,29 @@ toTypedSmtEnv env  (Reducer outType name args@[(indexArg, indexType), (accArg, a
         initExp
         body
 
+type TaggedStmtType = GStmtType (Int, String)
+
 mergeT :: StmtType -> StmtType -> StmtType -- todo : triple + calculations
-mergeT ty1 ty2 =  if null theC then GaiwanArrow (fstT ty1) (lstT ty2) else error $ show (ty1,ty2,theC)
+mergeT t1 t2 = unrename $ joinT (applym theC ty1) (applym theC ty2)
   where
+    ty1 = rename 1 t1
+    ty2 = rename 2 t2
+
+    toMatch1 = (lstT ty1)
+    toMatch2 = (fstT ty2)
+
+    joinT (GaiwanArrow a b) c = GaiwanArrow a (joinT b c)
+    joinT a (GaiwanArrow b c) | a == b = c
+    joinT (GaiwanBuf size1 ta) (GaiwanArrow (GaiwanBuf size2 tb) c) | ta == tb = fixN size1 size2 c
+    joinT a b = error $  "someting went wrong joining" ++ show (a,b)
+
     lstT (GaiwanArrow _ b) = lstT b
     lstT a = a
 
     fstT (GaiwanArrow b _) = b
 
-    theC = constraints (lstT ty1) (fstT ty2)
-    constraints :: StmtType -> StmtType -> [(String, StmtType)]
+    theC = constraints toMatch1 toMatch2
+    constraints :: TaggedStmtType -> TaggedStmtType -> [((Int, String), TaggedStmtType)]
     constraints (TVar a) (TVar b) | a == b = []
     constraints (TVar a) b = [(a, b)]
     constraints a (TVar b) = [(b, a)]
@@ -245,16 +262,34 @@ mergeT ty1 ty2 =  if null theC then GaiwanArrow (fstT ty1) (lstT ty2) else error
     constraints (GaiwanArrow a1 a2) (GaiwanArrow b1 b2) = listConstraints [a1,a2] [b1, b2]
     constraints (GaiwanBuf _ a) (GaiwanBuf _ b) = constraints a b
 
-    listConstraints :: [StmtType] -> [StmtType] -> [(String, StmtType)]
-    listConstraints (a:ar) (b:bs) = let prev = constraints a b in prev ++ listConstraints (map (apply prev) ar) (map (apply prev) bs)
+    listConstraints :: [TaggedStmtType] -> [TaggedStmtType] -> [((Int, String), TaggedStmtType)]
+    listConstraints (a:ar) (b:bs) = let prev = constraints a b in prev ++ listConstraints (map (applym prev) ar) (map (applym prev) bs)
     listConstraints [] [] = []
 
-    apply :: [(String, StmtType)] -> StmtType -> StmtType
-    apply m (TVar a) = fromMaybe (TVar a) $ lookup a m
-    apply m GaiwanInt = GaiwanInt
-    apply m (GaiwanTuple a) = GaiwanTuple $ map (apply m) a
-    apply m (GaiwanArrow a1 a2) = GaiwanArrow (apply m a1) (apply m a2)
-    apply m (GaiwanBuf n a) = GaiwanBuf n $ apply m a
+    applym :: [((Int, String), TaggedStmtType)] -> TaggedStmtType -> TaggedStmtType
+    applym m = apply $ \name  -> fromMaybe (TVar name) (lookup name m)
+
+    rename :: Int -> StmtType -> TaggedStmtType
+    rename v = apply $ \name -> TVar (v, name)
+
+    apply :: (a -> GStmtType b) -> GStmtType a -> GStmtType b
+    apply f (TVar a) = f a
+    apply f GaiwanInt = GaiwanInt
+    apply f (GaiwanTuple a) = GaiwanTuple $ map (apply f) a
+    apply f (GaiwanArrow a1 a2) = GaiwanArrow (apply f a1) (apply f a2)
+    apply f (GaiwanBuf n a) = GaiwanBuf n $ apply f a
+
+    unrename :: TaggedStmtType -> StmtType
+    unrename = apply $ \name -> TVar $ show name
+
+fixN :: Exp -> Exp -> GStmtType a -> GStmtType a
+fixN a b = doTheSubst (solveTCnt a b)
+
+solveTCnt :: Exp -> Exp -> [(String, Exp)]
+solveTCnt = error "not implemented"
+
+doTheSubst :: [(String, Exp)] -> GStmtType a -> GStmtType a
+doTheSubst = error "not implemented"
 
 liftEitherTuple :: (a, Either b c) -> Either b (a, c)
 liftEitherTuple (a, Right x) = Right (a, x)
@@ -318,15 +353,11 @@ typeOfBody env (IsGreater a b) = typeOfMathBinop env a b
 typeOfBody env (ArrayGet a b) = typeOfArrayAccess env a b -- FIXME
 typeOfBody env (Int _) = Right GaiwanInt
 typeOfBody env (Select t index) = case typeOfBody env t of
-  Right (GaiwanTuple types) | index > 0 && index < length types -> Right $ types !! index
-  Right _ -> Left "Can only select from Tuple"
+  Right (GaiwanTuple types) | index >= 0 && index < length types -> Right $ types !! index
+  Right (GaiwanTuple types) -> Left $ "Tuple index ("++ show index ++  ") out of range"
+  Right t -> Left $ "Can only select from Tuple, not from "++show t
   Left a -> Left a
-typeOfBody env (Tuple exps) =
-  if length itemTypes == length exps
-    then Right $ GaiwanTuple itemTypes
-    else Left "failed to type if"
-  where
-    itemTypes = rights $ map (typeOfBody env) exps
+typeOfBody env (Tuple exps) = GaiwanTuple <$> mapM (typeOfBody env) exps
 typeOfBody env var@Var {} = typeOfVar env var
 typeOfBody env (Negate e) = case typeOfBody env e of
   Right GaiwanInt -> Right GaiwanInt
@@ -352,4 +383,7 @@ typeOfMathBinop env a b = case mapM (typeOfBody env) [a, b] of
 typeOfArrayAccess :: [(String, StmtType)] -> Exp -> Exp -> Either String StmtType
 typeOfArrayAccess env array index = case mapM (typeOfBody env) [array, index] of
   Right [GaiwanBuf _ ty, GaiwanInt] -> Right ty
-  _ -> Left "failed to type array access"
+  Right [GaiwanBuf _ ty, _] -> Left "failed to type array access: index is not an int"
+  Right [at, GaiwanInt] -> Left $ "failed to type array access:" ++ show array ++ " was not an array but " ++ show at
+  Right _ -> Left "failed to type array access: idk"
+  Left e -> Left e

@@ -2,7 +2,6 @@
 
 module Main where
 
-import CodeGen.OpenCL
 import Criterion.Main
 import qualified Data.ByteString.Lazy as BS
 import Data.Either

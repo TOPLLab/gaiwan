@@ -9,7 +9,6 @@ module Lib
 where
 
 import Code
-import CodeGen.OpenCL
 -- import OpenCL
 
 import Control.Monad
@@ -45,14 +44,11 @@ compile =
     (\err -> Left $ "Parsing failed: " ++ err)
     (Right . uncurry Code.serialize . Code.compile . mkCode) -- todo make either
 
-mkCode (Prog defines main) =
-  execCode $ do
-    mapM_ registerDef defines
-    mkOpenCLKernelCode main
+mkCode (Prog defines main) = undefined 
 
 convert :: Program -> IO [[Integer]]
 convert program =
-  runOpenCL $ mkCode program
+  undefined
 
 render :: String -> Either String BS.ByteString
 render =
@@ -60,4 +56,4 @@ render =
     (\err -> Left $ "Parsing failed: " ++ err)
     (Right . Render.renderJSON)
 
-runCompiled = runOpenCLCompiled
+runCompiled = undefined
