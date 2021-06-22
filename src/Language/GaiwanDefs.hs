@@ -18,13 +18,15 @@ module Language.GaiwanDefs
     simpleSubstMult,
     simpleSubst,
     toTypedSmt,
+    mergeT,
   )
 where
 
 import Code.Definitions
+import Data.Bifunctor
 import Data.Either
 import Data.Maybe
-import Data.Bifunctor
+import Data.Foldable
 
 data Program
   = Prog [Stmt] Exp
@@ -34,10 +36,9 @@ data GStmtType a
   = GaiwanInt -- TODO: float
   | GaiwanTuple [GStmtType a]
   | GaiwanArrow (GStmtType a) (GStmtType a)
-  | GaiwanBuf Exp(GStmtType a)
+  | GaiwanBuf Exp (GStmtType a)
   | TVar a
   deriving (Show, Eq)
-
 
 type StmtType = GStmtType String
 
@@ -137,6 +138,8 @@ simplifyExp e =
     _simplifyExp (Minus (Int a) (Int b)) = Just $ Int $ a - b
     _simplifyExp (Times (Int a) (Int b)) = Just $ Int $ a * b
     _simplifyExp (Times (Int 0) _) = Just $ Int 0
+    _simplifyExp (Times (Int 1) x) = Just x
+    _simplifyExp (Times x (Int 1)) = Just x
     _simplifyExp (Times _ (Int 0)) = Just $ Int 0
     _simplifyExp (Div (Int a) (Int b)) = Just $ Int $ div a b
     _simplifyExp (Div a (Int 1)) = Just a
@@ -186,18 +189,24 @@ maybeGaiwanInt indexType = fromMaybe GaiwanInt indexType == GaiwanInt
 toTypedSmt :: Stmt -> Either String TypedStmt
 toTypedSmt = toTypedSmtEnv []
 
+fuckThisShit :: [StmtType] -> Either String StmtType
+fuckThisShit [a,b] = mergeT a b
+fuckThisShit [a] = Right a
+fuckThisShit (a:ar) = fuckThisShit ar >>= mergeT a
+fuckThisShit [] = Left "empty merge"
 
 toTypedSmtEnv :: [(String, StmtType)] -> Stmt -> Either String TypedStmt
-toTypedSmtEnv env  (Abstraction outType name args []) = Left "Cannot make abstraction without content"
-toTypedSmtEnv env  (Abstraction outType name args parts) = do
+toTypedSmtEnv env (Abstraction outType name args []) = Left "Cannot make abstraction without content"
+toTypedSmtEnv env (Abstraction outType name args parts) = do
   things <- maybe (Left "all the arguments of an abstraction need to be set") Right $ mapM liftMaybeTuple args
-  partType <- mapM (toTypedSmtEnv $ things++env)  parts
-  outT <- doRightCase outType $ foldr1 mergeT $ map typedStmt partType
+  partType <- mapM (toTypedSmtEnv $ things ++ env) parts
+  typedParts <- fuckThisShit $ map typedStmt partType
+  outT <- doRightCase outType typedParts
   return $
     TAbstraction outT name (map fst args) partType
-toTypedSmtEnv env  (Mapper outType name args@[(indexArg, indexType), (dataVarName, Just dataVarType)] body)
+toTypedSmtEnv env (Mapper outType name args@[(indexArg, indexType), (dataVarName, Just dataVarType)] body)
   | maybeGaiwanInt indexType = do
-    retType <- typeWithExpection outType ([(indexArg, GaiwanInt), (dataVarName, dataVarType)]++env) body
+    retType <- typeWithExpection outType ([(indexArg, GaiwanInt), (dataVarName, dataVarType)] ++ env) body
     return $
       TMapper
         ( GaiwanArrow
@@ -207,22 +216,22 @@ toTypedSmtEnv env  (Mapper outType name args@[(indexArg, indexType), (dataVarNam
         name
         (map fst args)
         body
-toTypedSmtEnv env  (Shaper outType@(Just outTypeR@(GaiwanBuf _ elemType)) name args@((indexArg, indexType) : otherArgs) body)
+toTypedSmtEnv env (Shaper outType@(Just outTypeR@(GaiwanBuf _ elemType)) name args@((indexArg, indexType) : otherArgs) body)
   | maybeGaiwanInt indexType = do
-    extraArgsBuf <- maybe (Left  "all the arguments of a shaper must have a specified buffer type") Right $ mapM liftMaybeTuple otherArgs
+    extraArgsBuf <- maybe (Left "all the arguments of a shaper must have a specified buffer type") Right $ mapM liftMaybeTuple otherArgs
     extraArgs <- mapM liftMaybeBuffElemType otherArgs
-    typeWithExpection (Just elemType) (((indexArg, GaiwanInt) : extraArgsBuf)++env) body
+    typeWithExpection (Just elemType) (((indexArg, GaiwanInt) : extraArgsBuf) ++ env) body
     return $
       TShaper
         (foldr (GaiwanArrow . snd) outTypeR extraArgsBuf)
         name
         (map fst args)
         body
-toTypedSmtEnv env  (Reducer outType name args@[(indexArg, indexType), (accArg, accType), (dataArg, dataType@(Just dataTypeR))] initExp body)
+toTypedSmtEnv env (Reducer outType name args@[(indexArg, indexType), (accArg, accType), (dataArg, dataType@(Just dataTypeR))] initExp body)
   | maybeGaiwanInt indexType = do
     checkecAccType <- typeWithExpection accType env initExp
     outElemType <- bufferType1 outType
-    checkedOutType <- typeWithExpectionAndJustArgs outElemType ([(indexArg, Just GaiwanInt), (accArg, Just checkecAccType), (dataArg, dataType)]++map (second Just) env) body
+    checkedOutType <- typeWithExpectionAndJustArgs outElemType ([(indexArg, Just GaiwanInt), (accArg, Just checkecAccType), (dataArg, dataType)] ++ map (second Just) env) body
     return $
       TReducer
         (GaiwanArrow (GaiwanBuf (Var "n" False) dataTypeR) (GaiwanBuf (Int 1) checkedOutType))
@@ -233,22 +242,35 @@ toTypedSmtEnv env  (Reducer outType name args@[(indexArg, indexType), (accArg, a
 
 type TaggedStmtType = GStmtType (Int, String)
 
-mergeT :: StmtType -> StmtType -> StmtType -- todo : triple + calculations
-mergeT t1 t2 = unrename $ joinT (applym theC ty1) (applym theC ty2)
+mergeT :: StmtType -> StmtType -> Either String StmtType -- todo : triple + calculations
+mergeT t1 t2 = unrename <$> joinT (applym theC ty1) (applym theC ty2)
   where
     ty1 = rename 1 t1
     ty2 = rename 2 t2
 
-    toMatch1 = (lstT ty1)
-    toMatch2 = (fstT ty2)
+    toMatch1 = lstT ty1
+    toMatch2 = fstT ty2
 
-    joinT (GaiwanArrow a b) c = GaiwanArrow a (joinT b c)
-    joinT a (GaiwanArrow b c) | a == b = c
-    joinT (GaiwanBuf size1 ta) (GaiwanArrow (GaiwanBuf size2 tb) c) | ta == tb = fixN size1 size2 c
-    joinT a b = error $  "someting went wrong joining" ++ show (a,b)
+    joinT :: (Eq a, Show a) => GStmtType a -> GStmtType a -> Either String (GStmtType a)
+    joinT = joinT1 []
+
+    joinT1 :: (Eq a, Show a) => [GStmtType a] -> GStmtType a -> GStmtType a -> Either String (GStmtType a)
+    joinT1 l (GaiwanArrow a@(GaiwanBuf size1 ta) b) c = joinT1 (a : l) b c
+    --joinT1 l a (GaiwanArrow b c) | a == b = -- it just works?
+    joinT1 l a@(GaiwanBuf size1 ta) (GaiwanArrow b@(GaiwanBuf size2 tb) c@(GaiwanBuf size3 tc)) | ta == tb = fixN l a b c
+    joinT1 l a@(GaiwanBuf size1 ta) (GaiwanArrow b c@(GaiwanArrow _ _)) = error $ "join with deep arry:" ++ show c
+    joinT1 l a b = error $ "someting went wrong joining" ++ show (a, b)
 
     lstT (GaiwanArrow _ b) = lstT b
     lstT a = a
+
+    --(
+    -- GaiwanBuf (Var "n" False) GaiwanInt,
+    -- GaiwanArrow
+    --       (GaiwanBuf (Var "n" False) GaiwanInt)
+    --       (GaiwanArrow
+    --                     (GaiwanBuf (Plus (Times (Int 1) (Var "n" False)) (Int 0)
+    --)
 
     fstT (GaiwanArrow b _) = b
 
@@ -259,15 +281,15 @@ mergeT t1 t2 = unrename $ joinT (applym theC ty1) (applym theC ty2)
     constraints a (TVar b) = [(b, a)]
     constraints GaiwanInt GaiwanInt = []
     constraints (GaiwanTuple a) (GaiwanTuple b) = listConstraints a b
-    constraints (GaiwanArrow a1 a2) (GaiwanArrow b1 b2) = listConstraints [a1,a2] [b1, b2]
+    constraints (GaiwanArrow a1 a2) (GaiwanArrow b1 b2) = listConstraints [a1, a2] [b1, b2]
     constraints (GaiwanBuf _ a) (GaiwanBuf _ b) = constraints a b
 
     listConstraints :: [TaggedStmtType] -> [TaggedStmtType] -> [((Int, String), TaggedStmtType)]
-    listConstraints (a:ar) (b:bs) = let prev = constraints a b in prev ++ listConstraints (map (applym prev) ar) (map (applym prev) bs)
+    listConstraints (a : ar) (b : bs) = let prev = constraints a b in prev ++ listConstraints (map (applym prev) ar) (map (applym prev) bs)
     listConstraints [] [] = []
 
     applym :: [((Int, String), TaggedStmtType)] -> TaggedStmtType -> TaggedStmtType
-    applym m = apply $ \name  -> fromMaybe (TVar name) (lookup name m)
+    applym m = apply $ \name -> fromMaybe (TVar name) (lookup name m)
 
     rename :: Int -> StmtType -> TaggedStmtType
     rename v = apply $ \name -> TVar (v, name)
@@ -282,11 +304,44 @@ mergeT t1 t2 = unrename $ joinT (applym theC ty1) (applym theC ty2)
     unrename :: TaggedStmtType -> StmtType
     unrename = apply $ \name -> TVar $ show name
 
-fixN :: Exp -> Exp -> GStmtType a -> GStmtType a
-fixN a b = doTheSubst (solveTCnt a b)
+fixN :: [GStmtType a] -> GStmtType a -> GStmtType a -> GStmtType a -> Either String (GStmtType a)
+fixN l (GaiwanBuf size2 _) (GaiwanBuf size3 _) (GaiwanBuf size4 resType) = do
+  solvedCount <- solveTCnt (map norm counts) (norm size2) (norm size3) (norm size4)
+  Right $ uncurry aaaaa solvedCount
+  where
+    norm (Times (Int a2) (Var name2 False)) = Plus (Times (Int a2) (Var name2 False)) (Int 0)
+    norm (Times (Var name2 False) (Int a2)) = Plus (Times (Int a2) (Var name2 False)) (Int 0)
+    norm (Var name2 False) = Plus (Times (Int 1) (Var name2 False)) (Int 0)
+    norm (Plus (Var name2 False) (Int b)) = Plus (Times (Int 1) (Var name2 False)) (Int b)
+    norm x@(Plus (Times (Int a) (Var name2 False)) (Int b)) = x
+    norm idk = error $ show idk -- TODO
+    counts = map (\(GaiwanBuf size _) -> size) l
 
-solveTCnt :: Exp -> Exp -> [(String, Exp)]
-solveTCnt = error "not implemented"
+    aaaaa argSizes endsize = bbb l argSizes (GaiwanBuf (simplifyExp endsize) resType)
+
+    bbb [] [] c = c
+    bbb ((GaiwanBuf _ t) : lr) (s : sr) acc = bbb lr sr $ GaiwanArrow (GaiwanBuf (simplifyExp s) t) acc
+
+solveTCnt :: [Exp] -> Exp -> Exp -> Exp -> Either String ([Exp], Exp)
+solveTCnt
+  ll
+  (Plus (Times (Int a2) (Var name2 False)) (Int b2))
+  (Plus (Times (Int a3) (Var name3 False)) (Int b3))
+  (Plus (Times (Int a4) (Var name4 False)) (Int b4))
+    | name3 == name4 = do
+      v <- case divMod (b3 - b2) a2 of
+        (_, x) | x > 0 -> Left "Not cleanly div"
+        (r1, 0) -> Right $ mod r1 a3
+      Right
+        ( map
+            ( \(Plus (Times (Int a1) (Var name1 False)) (Int b1)) -> Plus (Times (Int $ a1 * u) n) (Int $ b1 + a1 * v)
+            )
+            ll,
+          Plus (Times (Int $ a4 * div a2 (gcd a2 a3)) n) (Int $ b4 + a4 * div (a2 * v + b2 - b3) a3)
+        )
+    where
+      n = Var name2 False
+      u = div a3 (gcd a2 a3)
 
 doTheSubst :: [(String, Exp)] -> GStmtType a -> GStmtType a
 doTheSubst = error "not implemented"
@@ -309,8 +364,6 @@ bufferType :: Maybe StmtType -> Either String StmtType
 bufferType (Just (GaiwanBuf _ b)) = Right b
 bufferType (Just _) = Left "non buffer type"
 bufferType Nothing = Left "no type given"
-
-
 
 -- | Get the type of the elements of a buffer argument
 liftMaybeBuffElemType :: (String, Maybe StmtType) -> Either String (String, StmtType)
@@ -354,8 +407,8 @@ typeOfBody env (ArrayGet a b) = typeOfArrayAccess env a b -- FIXME
 typeOfBody env (Int _) = Right GaiwanInt
 typeOfBody env (Select t index) = case typeOfBody env t of
   Right (GaiwanTuple types) | index >= 0 && index < length types -> Right $ types !! index
-  Right (GaiwanTuple types) -> Left $ "Tuple index ("++ show index ++  ") out of range"
-  Right t -> Left $ "Can only select from Tuple, not from "++show t
+  Right (GaiwanTuple types) -> Left $ "Tuple index (" ++ show index ++ ") out of range"
+  Right t -> Left $ "Can only select from Tuple, not from " ++ show t
   Left a -> Left a
 typeOfBody env (Tuple exps) = GaiwanTuple <$> mapM (typeOfBody env) exps
 typeOfBody env var@Var {} = typeOfVar env var

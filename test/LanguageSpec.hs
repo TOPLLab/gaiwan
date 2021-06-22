@@ -76,6 +76,36 @@ spec = do
               ["size"]
               [TMapper (GaiwanArrow (GaiwanBuf (Var "n" False) GaiwanInt) (GaiwanBuf (Var "n" False) GaiwanInt)) "nameOFaMapper" ["i", "v"] (Plus (Var "size" False) (Var "v" False))]
           )
+    it "Merges types correctly 1: n->n # n->n => n->n" $
+      mergeT
+        (GaiwanArrow (GaiwanBuf (Var "n" False) GaiwanInt) (GaiwanBuf (Var "n" False) GaiwanInt))
+        (GaiwanArrow (GaiwanBuf (Var "n" False) GaiwanInt) (GaiwanBuf (Var "n" False) GaiwanInt))
+        `shouldBe` Right (GaiwanArrow (GaiwanBuf (Var "n" False) GaiwanInt) (GaiwanBuf (Var "n" False) GaiwanInt))
+
+    it "Merges types correctly 2: n->n+2 # 2n-> n => 2n -> n+1" $
+      mergeT
+        (GaiwanArrow (GaiwanBuf (Var "n" False) GaiwanInt) (GaiwanBuf (Plus (Var "n" False) (Int 2)) GaiwanInt))
+        (GaiwanArrow (GaiwanBuf (Times (Int 2) (Var "n" False)) GaiwanInt) (GaiwanBuf (Var "n" False) GaiwanInt))
+        `shouldBe` Right (GaiwanArrow (GaiwanBuf (Times (Int 2) (Var "n" False)) GaiwanInt) (GaiwanBuf (Plus (Var "n" False) (Int 1)) GaiwanInt))
+
+    it "Merges types correctly 3: n->n+2 # 2n+1->n  => 2n+1->n+1" $
+      mergeT
+        (GaiwanArrow (GaiwanBuf (Var "n" False) GaiwanInt) (GaiwanBuf (Plus (Var "n" False) (Int 2)) GaiwanInt))
+        (GaiwanArrow (GaiwanBuf (Plus (Times (Int 2) (Var "n" False)) (Int 1)) GaiwanInt) (GaiwanBuf (Var "n" False) GaiwanInt))
+        `shouldBe` Right (GaiwanArrow (GaiwanBuf (Plus (Times (Int 2) (Var "n" False)) (Int 1)) GaiwanInt) (GaiwanBuf (Plus (Var "n" False) (Int 1)) GaiwanInt))
+
+    it "Merges types correctly 3: 2n->n+2 # 3n+1->n => 6n+4->n+1" $ -- 3n+3
+      mergeT
+        (GaiwanArrow (GaiwanBuf (Times (Var "n" False) (Int 2)) GaiwanInt) (GaiwanBuf (Plus (Var "n" False) (Int 2)) GaiwanInt))
+        (GaiwanArrow (GaiwanBuf (Plus (Times (Int 3) (Var "n" False)) (Int 1)) GaiwanInt) (GaiwanBuf (Var "n" False) GaiwanInt))
+        `shouldBe` Right (GaiwanArrow (GaiwanBuf (Plus (Times (Int 6) (Var "n" False)) (Int 4)) GaiwanInt) (GaiwanBuf (Plus (Var "n" False) (Int 1)) GaiwanInt))
+
+    it "Merges types correctly 4: n->2n+1 # 2n->n => FAIL" $ -- 3n+3
+      mergeT
+        (GaiwanArrow (GaiwanBuf (Var "n" False) GaiwanInt) (GaiwanBuf (Times (Var "n" False) (Int 2)) GaiwanInt))
+        (GaiwanArrow (GaiwanBuf (Plus (Times (Int 2) (Var "n" False)) (Int 1)) GaiwanInt) (GaiwanBuf (Var "n" False) GaiwanInt))
+        `shouldSatisfy` isLeft
+
     it "types a two mapper in an abstraction" $
       toTypedSmt
         ( Abstraction
@@ -149,7 +179,7 @@ spec = do
               Shaper
                 (Just (GaiwanBuf n (GaiwanTuple [TVar "B", TVar "B"])))
                 "nameOFaMapper"
-                [("i", Nothing), ("v", Just (GaiwanBuf (Times (Int 2) n) (TVar "B")))]
+                [("i", Nothing), ("v", Just (GaiwanBuf (Plus (Times (Int 2) n) (Int 1)) (TVar "B")))]
                 $ Tuple
                   [ ArrayGet v (Times (Int 2) (Var "i" False)),
                     ArrayGet v (Plus (Int 1) (Times (Int 2) (Var "i" False)))
@@ -163,7 +193,40 @@ spec = do
                 (Plus (Select (Select v 1) 1) (Select (Select v 1) 0))
             ]
         )
-        `shouldBe` Left ""
+        `shouldBe` Right
+          ( TAbstraction
+              ( GaiwanArrow
+                  (GaiwanBuf (Plus (Times (Int 4) (Var "n" False)) (Int 2)) GaiwanInt)
+                  (GaiwanBuf (Var "n" False) GaiwanInt)
+              )
+              "nameOFanAbstraction"
+              ["size"]
+              [ TShaper
+                  ( GaiwanArrow
+                      (GaiwanBuf (Times (Int 2) (Var "n" False)) (TVar "A"))
+                      (GaiwanBuf (Var "n" False) (GaiwanTuple [TVar "A", TVar "A"]))
+                  )
+                  "nameOFaMapper"
+                  ["i", "v"]
+                  (Tuple [ArrayGet (Var "v" False) (Times (Int 2) (Var "i" False)), ArrayGet (Var "v" False) (Plus (Int 1) (Times (Int 2) (Var "i" False)))]),
+                TShaper
+                  ( GaiwanArrow
+                      (GaiwanBuf (Plus (Times (Int 2) (Var "n" False)) (Int 1)) (TVar "B"))
+                      (GaiwanBuf (Var "n" False) (GaiwanTuple [TVar "B", TVar "B"]))
+                  )
+                  "nameOFaMapper"
+                  ["i", "v"]
+                  (Tuple [ArrayGet (Var "v" False) (Times (Int 2) (Var "i" False)), ArrayGet (Var "v" False) (Plus (Int 1) (Times (Int 2) (Var "i" False)))]),
+                TMapper
+                  ( GaiwanArrow
+                      (GaiwanBuf (Var "n" False) (GaiwanTuple [GaiwanTuple [GaiwanInt, GaiwanInt], GaiwanTuple [GaiwanInt, GaiwanInt]]))
+                      (GaiwanBuf (Var "n" False) GaiwanInt)
+                  )
+                  "nameOFaMapper"
+                  ["i", "v"]
+                  (Plus (Select (Select (Var "v" False) 1) 1) (Select (Select (Var "v" False) 1) 0))
+              ]
+          )
 
   describe "Language.Gaiwan (parser): check if all demos parse" $ do
     files <- runIO $ listDirectory "demo"
