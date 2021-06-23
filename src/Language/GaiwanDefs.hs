@@ -25,8 +25,8 @@ where
 import Code.Definitions
 import Data.Bifunctor
 import Data.Either
-import Data.Maybe
 import Data.Foldable
+import Data.Maybe
 
 data Program
   = Prog [Stmt] Exp
@@ -190,9 +190,9 @@ toTypedSmt :: Stmt -> Either String TypedStmt
 toTypedSmt = toTypedSmtEnv []
 
 fuckThisShit :: [StmtType] -> Either String StmtType
-fuckThisShit [a,b] = mergeT a b
+fuckThisShit [a, b] = mergeT a b
 fuckThisShit [a] = Right a
-fuckThisShit (a:ar) = fuckThisShit ar >>= mergeT a
+fuckThisShit (a : ar) = fuckThisShit ar >>= mergeT a
 fuckThisShit [] = Left "empty merge"
 
 toTypedSmtEnv :: [(String, StmtType)] -> Stmt -> Either String TypedStmt
@@ -322,9 +322,13 @@ solveTCnt
   (Plus (Times (Int a3) (Var name3 False)) (Int b3))
   (Plus (Times (Int a4) (Var name4 False)) (Int b4))
     | name3 == name4 = do
-      v <- case divMod (b3 - b2) a2 of
-        (_, x) | x > 0 -> Left $ "The constant differences in buffersizes are not unifiable " ++ show ((b3 - b2) ,a2)
-        (r1, 0) -> Right $ mod r1 a3
+      v <- case a2 `mod` a3 of
+        0 -> case (b3 - b2) `mod` a3 of
+          0 -> Right 0
+          _ -> Left "dddddddd"
+        _ -> case divMod (b3 - b2) a2 of
+          (r1, 0) -> Right $ mod r1 a3
+          _ -> Left $ "The constant differences in buffersizes are not unifiable " ++ show ((b3 - b2), a2)
       Right
         ( map
             ( \(Plus (Times (Int a1) (Var _ False)) (Int b1)) -> Plus (Times (Int $ a1 * u) n) (Int $ b1 + a1 * v)
@@ -333,7 +337,7 @@ solveTCnt
           Plus (Times (Int $ a4 * div a2 (gcd a2 a3)) n) (Int $ b4 + a4 * div (a2 * v + b2 - b3) a3)
         )
     where
-      a2Inva3 = if a3 == 1 then 1 else head $ filter (\x -> (x * a2) `mod` a3 == 1) [1..a3]
+      a2Inva3 = if a3 == 1 then 1 else head $ filter (\x -> (x * a2) `mod` a3 == 1) [1 .. a3]
       n = Var name2 False
       u = div a3 (gcd a2 a3)
 
