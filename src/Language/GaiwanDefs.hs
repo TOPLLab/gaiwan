@@ -24,7 +24,6 @@ where
 
 import Code.Definitions
 import Data.Bifunctor
-import Data.Either
 import Data.Foldable
 import Data.Maybe
 
@@ -49,6 +48,7 @@ data TypedStmt
   | TAbstraction StmtType String [String] [TypedStmt]
   deriving (Show, Eq)
 
+typedStmt :: TypedStmt -> StmtType
 typedStmt (TMapper t _ _ _) = t
 typedStmt (TShaper t _ _ _) = t
 typedStmt (TReducer t _ _ _ _) = t
@@ -301,11 +301,12 @@ fixN l (GaiwanBuf size2 _) (GaiwanBuf size3 _) (GaiwanBuf size4 resType) = do
   solvedCount <- solveTCnt (map norm counts) (norm size2) (norm size3) (norm size4)
   Right $ uncurry aaaaa solvedCount
   where
-    norm (Times (Int a2) (Var name2 False)) = Plus (Times (Int a2) (Var name2 False)) (Int 0)
-    norm (Times (Var name2 False) (Int a2)) = Plus (Times (Int a2) (Var name2 False)) (Int 0)
-    norm (Var name2 False) = Plus (Times (Int 1) (Var name2 False)) (Int 0)
-    norm (Plus (Var name2 False) (Int b)) = Plus (Times (Int 1) (Var name2 False)) (Int b)
-    norm x@(Plus (Times (Int a) (Var name2 False)) (Int b)) = x
+    norm :: Exp -> (String, Int, Int)
+    norm (Times (Int a2) (Var name2 False)) = (name2, a2, 0) -- Plus (Times (Int a2) (Var name2 False)) (Int 0)
+    norm (Times (Var name2 False) (Int a2)) = (name2, a2, 0) -- Plus (Times (Int a2) (Var name2 False)) (Int 0)
+    norm (Var name2 False) = (name2, 1, 0) -- Plus (Times (Int 1) (Var name2 False)) (Int 0)
+    norm (Plus (Var name2 False) (Int b)) = (name2, 1, b) -- Plus (Times (Int 1) (Var name2 False)) (Int b)
+    norm (Plus (Times (Int a) (Var name2 False)) (Int b)) = (name2, a, b)
     norm idk = error $ show idk -- TODO
     counts = map (\(GaiwanBuf size _) -> size) l
 
@@ -314,12 +315,12 @@ fixN l (GaiwanBuf size2 _) (GaiwanBuf size3 _) (GaiwanBuf size4 resType) = do
     bbb [] [] c = c
     bbb ((GaiwanBuf _ t) : lr) (s : sr) acc = bbb lr sr $ GaiwanArrow (GaiwanBuf (simplifyExp s) t) acc
 
-solveTCnt :: [Exp] -> Exp -> Exp -> Exp -> Either String ([Exp], Exp)
+solveTCnt :: [(String, Int, Int)] -> (String, Int, Int) -> (String, Int, Int) -> (String, Int, Int) -> Either String ([Exp], Exp)
 solveTCnt
-  ll
-  (Plus (Times (Int a2) (Var name2 False)) (Int b2))
-  (Plus (Times (Int a3) (Var name3 False)) (Int b3))
-  (Plus (Times (Int a4) (Var name4 False)) (Int b4))
+  sourceSizes -- input size
+  (name2, a2, b2)
+  (name3, a3, b3) -- overlapping sizes, these should be unified
+  (name4, a4, b4) -- output size
     | name3 == name4 = do
       -- Solve modulo operation to find value for v
       v <-
@@ -328,46 +329,17 @@ solveTCnt
           Right
           $ find (\v -> (a2 * v - (b3 - b2)) `mod` a3 == 0) [0 .. a3]
 
-      Right
-        ( map
-            ( \(Plus (Times (Int a1) (Var _ False)) (Int b1)) -> Plus (Times (Int $ a1 * u) n) (Int $ b1 + a1 * v)
-            )
-            ll,
-          Plus (Times (Int $ a4 * div a2 (gcd a2 a3)) n) (Int $ b4 + a4 * div (a2 * v + b2 - b3) a3)
-        )
+      unifiedSourceSizes <-
+        (`mapM` sourceSizes) $ \(name1, a1, b1) ->
+          if name1 == name2
+            then Right $ Plus (Times (Int $ a1 * u) n) (Int $ b1 + a1 * v)
+            else Left "All size varaibles for buffers in a single acion must be the same"
+      let outputSize = Plus (Times (Int $ a4 * div a2 (gcd a2 a3)) n) (Int $ b4 + a4 * div (a2 * v + b2 - b3) a3)
+
+      return (unifiedSourceSizes, outputSize)
     where
       n = Var name2 False
       u = div a3 (gcd a2 a3)
-
-checkJust :: String -> Maybe a -> Either String a
-checkJust msg = maybe (Left msg) Right
-
-checkSndJustList :: String -> [(b, Maybe a)] -> Either String [(b, a)]
-checkSndJustList msg a = checkJust msg $ mapM liftMaybeTuple a
-
-liftMaybeTuple :: (a, Maybe b) -> Maybe (a, b)
-liftMaybeTuple (a, Just x) = Just (a, x)
-liftMaybeTuple (a, Nothing) = Nothing
-
-bufferType1 :: Maybe StmtType -> Either String (Maybe StmtType)
-bufferType1 (Just (GaiwanBuf (Int 1) b)) = Right $ Just b
-bufferType1 (Just GaiwanBuf {}) = Left "non buffer type with length one for out of reducer"
-bufferType1 (Just _) = Left "non buffer type"
-bufferType1 Nothing = Right Nothing
-
-bufferType :: Maybe StmtType -> Either String StmtType
-bufferType (Just (GaiwanBuf _ b)) = Right b
-bufferType (Just _) = Left "non buffer type"
-bufferType Nothing = Left "no type given"
-
--- | Get the type of the elements of a buffer argument
-liftMaybeBuffElemType :: (String, Maybe StmtType) -> Either String (String, StmtType)
-liftMaybeBuffElemType (a, b) = (a,) <$> bufferType b
-
--- >>> mapM liftMaybeTuple [(5, Just 1), (6, Nothing)] :: Maybe [(Integer, Integer)]
--- Nothing
--- >>> mapM liftMaybeTuple [(5, Just 1), (6, Just 4)] :: Maybe [(Integer, Integer)]
--- Just [(5,1),(6,4)]
 
 typeWithExpectionAndJustArgs :: Maybe StmtType -> [(String, Maybe StmtType)] -> Exp -> Either String StmtType
 typeWithExpectionAndJustArgs x args exp = maybe (Left "failed to lift maybe tuple") b (mapM liftMaybeTuple args)
@@ -418,10 +390,11 @@ typeOfVar :: [(String, StmtType)] -> Exp -> Either String StmtType
 typeOfVar _ (Var name True) = error "not implemented"
 typeOfVar env (Var name False) = maybe (Left $ name ++ " not in env") Right $ lookup name env
 
+typeOfMathBinop :: [(String, StmtType)] -> Exp -> Exp -> Either String (GStmtType a)
 typeOfMathBinop env a b = case mapM (typeOfBody env) [a, b] of
   Right [GaiwanInt, GaiwanInt] -> Right GaiwanInt
   Left e -> Left e
-  _ -> Left "failed to type binop"
+  Right t -> Left $ "failed to type math binop expected two ints, got " ++ show t
 
 typeOfArrayAccess :: [(String, StmtType)] -> Exp -> Exp -> Either String StmtType
 typeOfArrayAccess env array index = case mapM (typeOfBody env) [array, index] of
@@ -430,3 +403,29 @@ typeOfArrayAccess env array index = case mapM (typeOfBody env) [array, index] of
   Right [at, GaiwanInt] -> Left $ "failed to type array access:" ++ show array ++ " was not an array but " ++ show at
   Right _ -> Left "failed to type array access: idk"
   Left e -> Left e
+
+-- | Transform a Maybe to an Eiterh string
+checkJust :: String -> Maybe a -> Either String a
+checkJust msg = maybe (Left msg) Right
+
+checkSndJustList :: String -> [(b, Maybe a)] -> Either String [(b, a)]
+checkSndJustList msg a = checkJust msg $ mapM liftMaybeTuple a
+
+liftMaybeTuple :: (a, Maybe b) -> Maybe (a, b)
+liftMaybeTuple (a, Just x) = Just (a, x)
+liftMaybeTuple (a, Nothing) = Nothing
+
+bufferType1 :: Maybe StmtType -> Either String (Maybe StmtType)
+bufferType1 (Just (GaiwanBuf (Int 1) b)) = Right $ Just b
+bufferType1 (Just GaiwanBuf {}) = Left "non buffer type with length one for out of reducer"
+bufferType1 (Just _) = Left "non buffer type"
+bufferType1 Nothing = Right Nothing
+
+bufferType :: Maybe StmtType -> Either String StmtType
+bufferType (Just (GaiwanBuf _ b)) = Right b
+bufferType (Just _) = Left "non buffer type"
+bufferType Nothing = Left "no type given"
+
+-- | Get the type of the elements of a buffer argument
+liftMaybeBuffElemType :: (String, Maybe StmtType) -> Either String (String, StmtType)
+liftMaybeBuffElemType (a, b) = (a,) <$> bufferType b
