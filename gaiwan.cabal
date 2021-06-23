@@ -36,6 +36,7 @@ library
       Code.Serialize
       Language.Gaiwan
       Language.GaiwanDefs
+      Language.GaiwanTypes
       Language.Tokens
       Lib
       OpenCL

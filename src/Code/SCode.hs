@@ -19,6 +19,7 @@ import Control.Monad.State.Lazy
 import Data.Functor
 import Data.List as L hiding (delete, insert, union)
 import Language.GaiwanDefs
+import Language.GaiwanTypes
 
 type SCode b a = State (Code b) a
 

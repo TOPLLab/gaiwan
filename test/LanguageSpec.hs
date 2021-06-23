@@ -5,6 +5,7 @@ module LanguageSpec (spec) where
 import Data.Either
 import Language.Gaiwan
 import Language.GaiwanDefs
+import Language.GaiwanTypes
 import Lib (convert)
 import System.Directory
 import System.FilePath
