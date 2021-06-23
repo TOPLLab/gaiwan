@@ -4,6 +4,7 @@ import           Data.Char
 import           Data.List
 import           Language.Tokens
 import           Language.GaiwanDefs
+import           Language.GaiwanTypes
 }
 %name gaiwanParse
 %tokentype { Token }
@@ -14,6 +15,7 @@ import           Language.GaiwanDefs
 %token
       function                                              { TokenFunction $$ _ }
       reducer                                               { TokenReducer  _ }
+      abstraction                                           { TokenAbstraction  _ }
       let                                                   { TokenLet      _ }
       in                                                    { TokenIn       _ }
       if                                                    { TokenIf       _ }
@@ -53,7 +55,13 @@ import           Language.GaiwanDefs
 Program : stmtList Exp                                      { Prog (reverse $1) $2 }
 
 Stmt  :  function var '(' varlist ')' maybetype StmtBody    { mkFun $1 $6 $2  (reverse $4) $7 }
-      |  reducer  var '(' varlist ')' maybetype '(' ExpBase ')' StmtBody { Language.GaiwanDefs.Reducer $6 $2 (reverse $4)  $8 $10 }
+      |  reducer  var '(' varlist ')' maybetype '(' ExpBase ')' StmtBody { Language.GaiwanTypes.Reducer $6 $2 (reverse $4)  $8 $10 }
+      |  abstraction var '(' varlist ')' maybetype bracO   pipedStmt bracC  {Language.GaiwanTypes.Abstraction $6 $2 (reverse $4) $8}
+
+
+
+pipedStmt : Stmt                                         { [$1] }
+         | pipedStmt pipe Stmt %prec PIPE                { $3 : $1 }
 
 StmtBody : bracO ExpBase bracC  {$2 }
 
@@ -68,6 +76,7 @@ BracExp : bracO ExpBase bracC                               { $2 }
 ExpBase : ExpApp                                            { $1 }
         | ExpBase '%' ExpBase                               { Modulo $1 $3 }
         | tuple '(' explist ')'                             { Tuple (reverse $3) }
+        | ExpBase '[' int ']'                               { Select $1 $3 }
         | ExpBase '+' ExpBase                               { Plus $1 $3 }
         | ExpBase '-' ExpBase                               { Minus $1 $3 }
         | ExpBase '*' ExpBase                               { Times $1 $3 }
@@ -100,7 +109,7 @@ typedvar : var {($1, Nothing) :: (String, Maybe StmtType) }
 maybetype : {- empty -} {Nothing }
           | ':' type {Just $2 }
 
-type : int {GaiwanInt} 
+type : int {GaiwanInt}
      | var {TVar $1 }
      | tuple '(' typelist ')'                               { GaiwanTuple (reverse $3) }
 
@@ -127,8 +136,8 @@ cleanPiped x   = PipedExp x
 mkApp (Var name builtin) = App name builtin
 
 mkFun :: FunctionType -> (Maybe StmtType) -> String -> [(String, Maybe StmtType)] -> Exp -> Stmt
-mkFun Language.Tokens.Mapper   =  Language.GaiwanDefs.Mapper
-mkFun Language.Tokens.Shaper =  Language.GaiwanDefs.Shaper
+mkFun Language.Tokens.Mapper   =  Language.GaiwanTypes.Mapper
+mkFun Language.Tokens.Shaper =  Language.GaiwanTypes.Shaper
 
 parseGaiwan :: String -> Either String Program
 parseGaiwan s = runAlex s gaiwanParse

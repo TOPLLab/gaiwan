@@ -17,7 +17,8 @@ tokens :-
   "--".*        ;
   mapper                           { ingest $ \s -> TokenFunction Mapper }
   shaper                           { ingest $ \s -> TokenFunction Shaper }
-  reduce                           { ingest $ \s -> TokenReducer }
+  reducer                           { ingest $ \s -> TokenReducer }
+  abstraction                           { ingest $ \s -> TokenAbstraction }
   if                               { ingest $ \s -> TokenIf }
   else                             { ingest $ \s -> TokenElse }
   tuple                             { ingest $ \s -> TokenTuple }
@@ -40,6 +41,7 @@ data ReducerType = Reducer  deriving (Eq,Ord,Enum,Show)
 -- The token type:
 data Token =
   TokenFunction FunctionType    AlexPosn |
+  TokenAbstraction      AlexPosn |
   TokenReducer          AlexPosn |
   TokenIf               AlexPosn |
   TokenElse             AlexPosn |
