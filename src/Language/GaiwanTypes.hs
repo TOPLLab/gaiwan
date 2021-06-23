@@ -28,7 +28,10 @@ data GStmtType a
   deriving (Show, Eq)
 
 type StmtType = GStmtType String
+
 type TaggedStmtType = GStmtType (Int, String)
+
+type TypeingOut = Either String
 
 data TypedStmt
   = TMapper StmtType String [String] Exp
@@ -64,10 +67,10 @@ stmtName x = stmt x (\name b c -> name)
 maybeGaiwanInt :: Maybe StmtType -> Bool
 maybeGaiwanInt indexType = fromMaybe GaiwanInt indexType == GaiwanInt
 
-toTypedSmt :: Stmt -> Either String TypedStmt
+toTypedSmt :: Stmt -> TypeingOut TypedStmt
 toTypedSmt = toTypedSmtEnv []
 
-toTypedSmtEnv :: [(String, StmtType)] -> Stmt -> Either String TypedStmt
+toTypedSmtEnv :: [(String, StmtType)] -> Stmt -> TypeingOut TypedStmt
 toTypedSmtEnv env (Abstraction outType name args []) = Left "Cannot make abstraction without content"
 toTypedSmtEnv env (Abstraction outType name args parts) = do
   things <- checkSndJustList "all the arguments of an abstraction need to be set" args
@@ -112,15 +115,14 @@ toTypedSmtEnv env (Reducer outType name args@[(indexArg, indexType), (accArg, ac
         initExp
         body
 
-
-mergeTList :: [StmtType] -> Either String StmtType
+mergeTList :: [StmtType] -> TypeingOut StmtType
 mergeTList [a, b] = mergeT a b
 mergeTList [a] = Right a
 mergeTList (a : ar) = mergeTList ar >>= mergeT a
 mergeTList [] = Left "empty merge"
 
 -- | merge two arrow types like function composition (and adjust buffer sizes if needed)
-mergeT :: StmtType -> StmtType -> Either String StmtType
+mergeT :: StmtType -> StmtType -> TypeingOut StmtType
 mergeT t1 t2 = unrename <$> joinT (applym theC ty1) (applym theC ty2)
   where
     ty1 = rename 1 t1
@@ -129,13 +131,13 @@ mergeT t1 t2 = unrename <$> joinT (applym theC ty1) (applym theC ty2)
     toMatch1 = lstT ty1
     toMatch2 = fstT ty2
 
-    joinT :: (Eq a, Show a) => GStmtType a -> GStmtType a -> Either String (GStmtType a)
+    joinT :: (Eq a, Show a) => GStmtType a -> GStmtType a -> TypeingOut (GStmtType a)
     joinT = joinT1 []
 
-    joinT1 :: (Eq a, Show a) => [GStmtType a] -> GStmtType a -> GStmtType a -> Either String (GStmtType a)
+    joinT1 :: (Eq a, Show a) => [GStmtType a] -> GStmtType a -> GStmtType a -> TypeingOut (GStmtType a)
     joinT1 l (GaiwanArrow a@(GaiwanBuf size1 ta) b) c = joinT1 (a : l) b c
     --joinT1 l a (GaiwanArrow b c) | a == b = -- it just works?
-    joinT1 l a@(GaiwanBuf size1 ta) (GaiwanArrow b@(GaiwanBuf size2 tb) c@(GaiwanBuf size3 tc)) | ta == tb = fixN l a b c
+    joinT1 l a@(GaiwanBuf size1 ta) (GaiwanArrow b@(GaiwanBuf size2 tb) c@(GaiwanBuf size3 tc)) | ta == tb = unifySize l a b c
     joinT1 l a@(GaiwanBuf size1 ta) (GaiwanArrow b c@(GaiwanArrow _ _)) = error $ "join with deep arry:" ++ show c
     joinT1 l a b = error $ "someting went wrong joining" ++ show (reverse (a : l), b, theC)
 
@@ -176,30 +178,50 @@ mergeT t1 t2 = unrename <$> joinT (applym theC ty1) (applym theC ty2)
     unrename :: TaggedStmtType -> StmtType
     unrename = apply $ \name -> TVar $ show name
 
-fixN :: [GStmtType a] -> GStmtType a -> GStmtType a -> GStmtType a -> Either String (GStmtType a)
-fixN l (GaiwanBuf size2 _) (GaiwanBuf size3 _) (GaiwanBuf size4 resType) = do
-  solvedCount <- solveTCnt (map norm counts) (norm size2) (norm size3) (norm size4)
-  Right $ uncurry aaaaa solvedCount
-  where
-    norm :: Exp -> (String, Int, Int)
-    norm (Times (Int a2) (Var name2 False)) = (name2, a2, 0) -- Plus (Times (Int a2) (Var name2 False)) (Int 0)
-    norm (Times (Var name2 False) (Int a2)) = (name2, a2, 0) -- Plus (Times (Int a2) (Var name2 False)) (Int 0)
-    norm (Var name2 False) = (name2, 1, 0) -- Plus (Times (Int 1) (Var name2 False)) (Int 0)
-    norm (Plus (Var name2 False) (Int b)) = (name2, 1, b) -- Plus (Times (Int 1) (Var name2 False)) (Int b)
-    norm (Plus (Times (Int a) (Var name2 False)) (Int b)) = (name2, a, b)
-    norm idk = error $ show idk -- TODO
-    counts = map (\(GaiwanBuf size _) -> size) l
+-- | Unify the size of buffers
+unifySize :: [GStmtType a] -> GStmtType a -> GStmtType a -> GStmtType a -> TypeingOut (GStmtType a)
+unifySize
+  reversedInBufs
+  (GaiwanBuf size2 _)
+  (GaiwanBuf size3 _) -- buffers to be unified
+  (GaiwanBuf size4 resType) =
+    do
+      cntSolution <-
+        solveTCnt
+          <$> mapM norm revCounts
+            <*> norm size2
+            <*> norm size3
+            <*> norm size4
+      uncurry buildOut <$> cntSolution
+    where
+      revCounts = map (\(GaiwanBuf size _) -> size) reversedInBufs
 
-    aaaaa argSizes endsize = bbb l argSizes (GaiwanBuf (simplifyExp endsize) resType)
+      buildOut argSizes endsize = foldZipRev reversedInBufs argSizes (GaiwanBuf (simplifyExp endsize) resType)
 
-    bbb [] [] c = c
-    bbb ((GaiwanBuf _ t) : lr) (s : sr) acc = bbb lr sr $ GaiwanArrow (GaiwanBuf (simplifyExp s) t) acc
+      foldZipRev [] [] c = c
+      foldZipRev ((GaiwanBuf _ t) : lr) (s : sr) acc = foldZipRev lr sr $ GaiwanArrow (GaiwanBuf (simplifyExp s) t) acc
 
-solveTCnt :: [(String, Int, Int)] -> (String, Int, Int) -> (String, Int, Int) -> (String, Int, Int) -> Either String ([Exp], Exp)
+-- | Normalize a size expression and get (varname, a, b) = a*varname + b
+-- TODO: make either
+norm :: Exp -> TypeingOut (String, Int, Int)
+norm (Times (Int a2) (Var name2 False)) = Right (name2, a2, 0)
+norm (Times (Var name2 False) (Int a2)) = Right (name2, a2, 0)
+norm (Var name2 False) = Right (name2, 1, 0)
+norm (Plus (Var name2 False) (Int b)) = Right (name2, 1, b)
+norm (Plus (Times (Int a) (Var name2 False)) (Int b)) = Right (name2, a, b)
+norm idk = Left $ show idk -- TODO
+
+-- | solve
+solveTCnt ::
+  [(String, Int, Int)] ->
+  (String, Int, Int) ->
+  (String, Int, Int) ->
+  (String, Int, Int) ->
+  TypeingOut ([Exp], Exp)
 solveTCnt
   sourceSizes -- input size
-  (name2, a2, b2)
-  (name3, a3, b3) -- overlapping sizes, these should be unified
+  (name2, a2, b2) -- overlapping sizes, these 2 should be unified
+  (name3, a3, b3) -- -/
   (name4, a4, b4) -- output size
     | name3 == name4 = do
       -- Solve modulo operation to find value for v
@@ -221,21 +243,21 @@ solveTCnt
       n = Var name2 False
       u = div a3 (gcd a2 a3)
 
-typeWithExpectionAndJustArgs :: Maybe StmtType -> [(String, Maybe StmtType)] -> Exp -> Either String StmtType
+typeWithExpectionAndJustArgs :: Maybe StmtType -> [(String, Maybe StmtType)] -> Exp -> TypeingOut StmtType
 typeWithExpectionAndJustArgs x args exp = maybe (Left "failed to lift maybe tuple") b (mapM liftMaybeTuple args)
   where
-    b :: [(String, StmtType)] -> Either String StmtType
+    b :: [(String, StmtType)] -> TypeingOut StmtType
     b actualArgs = typeWithExpection x actualArgs exp
 
-typeWithExpection :: Maybe StmtType -> [(String, StmtType)] -> Exp -> Either String StmtType
+typeWithExpection :: Maybe StmtType -> [(String, StmtType)] -> Exp -> TypeingOut StmtType
 typeWithExpection x args exp = either Left (doRightCase x) (typeOfBody args exp)
 
-doRightCase :: Maybe StmtType -> StmtType -> Either String StmtType
+doRightCase :: Maybe StmtType -> StmtType -> TypeingOut StmtType
 doRightCase Nothing b = Right b
 doRightCase (Just a) b | a == b = Right b
 doRightCase (Just a) b = Left $ "Expected outtype does not match " ++ show a ++ " but got " ++ show b
 
-typeOfBody :: [(String, StmtType)] -> Exp -> Either String StmtType
+typeOfBody :: [(String, StmtType)] -> Exp -> TypeingOut StmtType
 typeOfBody env Let {} = Left "let not yet supported"
 typeOfBody env (Plus a b) = typeOfMathBinop env a b
 typeOfBody env (Minus a b) = typeOfMathBinop env a b
@@ -266,17 +288,17 @@ typeOfBody env App {} = Left "I don't know this applicaion"
 typeOfBody env GPUBufferGet {} = Left "Cannot use GPUBufferget in body"
 typeOfBody env Loop {} = Left "Cannot use loop in body"
 
-typeOfVar :: [(String, StmtType)] -> Exp -> Either String StmtType
+typeOfVar :: [(String, StmtType)] -> Exp -> TypeingOut StmtType
 typeOfVar _ (Var name True) = error "not implemented"
 typeOfVar env (Var name False) = maybe (Left $ name ++ " not in env") Right $ lookup name env
 
-typeOfMathBinop :: [(String, StmtType)] -> Exp -> Exp -> Either String (GStmtType a)
+typeOfMathBinop :: [(String, StmtType)] -> Exp -> Exp -> TypeingOut (GStmtType a)
 typeOfMathBinop env a b = case mapM (typeOfBody env) [a, b] of
   Right [GaiwanInt, GaiwanInt] -> Right GaiwanInt
   Left e -> Left e
   Right t -> Left $ "failed to type math binop expected two ints, got " ++ show t
 
-typeOfArrayAccess :: [(String, StmtType)] -> Exp -> Exp -> Either String StmtType
+typeOfArrayAccess :: [(String, StmtType)] -> Exp -> Exp -> TypeingOut StmtType
 typeOfArrayAccess env array index = case mapM (typeOfBody env) [array, index] of
   Right [GaiwanBuf _ ty, GaiwanInt] -> Right ty
   Right [GaiwanBuf _ ty, _] -> Left "failed to type array access: index is not an int"
@@ -285,27 +307,27 @@ typeOfArrayAccess env array index = case mapM (typeOfBody env) [array, index] of
   Left e -> Left e
 
 -- | Transform a Maybe to an Eiterh string
-checkJust :: String -> Maybe a -> Either String a
+checkJust :: String -> Maybe a -> TypeingOut a
 checkJust msg = maybe (Left msg) Right
 
-checkSndJustList :: String -> [(b, Maybe a)] -> Either String [(b, a)]
+checkSndJustList :: String -> [(b, Maybe a)] -> TypeingOut [(b, a)]
 checkSndJustList msg a = checkJust msg $ mapM liftMaybeTuple a
 
 liftMaybeTuple :: (a, Maybe b) -> Maybe (a, b)
 liftMaybeTuple (a, Just x) = Just (a, x)
 liftMaybeTuple (a, Nothing) = Nothing
 
-bufferType1 :: Maybe StmtType -> Either String (Maybe StmtType)
+bufferType1 :: Maybe StmtType -> TypeingOut (Maybe StmtType)
 bufferType1 (Just (GaiwanBuf (Int 1) b)) = Right $ Just b
 bufferType1 (Just GaiwanBuf {}) = Left "non buffer type with length one for out of reducer"
 bufferType1 (Just _) = Left "non buffer type"
 bufferType1 Nothing = Right Nothing
 
-bufferType :: Maybe StmtType -> Either String StmtType
+bufferType :: Maybe StmtType -> TypeingOut StmtType
 bufferType (Just (GaiwanBuf _ b)) = Right b
 bufferType (Just _) = Left "non buffer type"
 bufferType Nothing = Left "no type given"
 
 -- | Get the type of the elements of a buffer argument
-liftMaybeBuffElemType :: (String, Maybe StmtType) -> Either String (String, StmtType)
+liftMaybeBuffElemType :: (String, Maybe StmtType) -> TypeingOut (String, StmtType)
 liftMaybeBuffElemType (a, b) = (a,) <$> bufferType b
