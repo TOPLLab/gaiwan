@@ -242,7 +242,8 @@ toTypedSmtEnv env (Reducer outType name args@[(indexArg, indexType), (accArg, ac
 
 type TaggedStmtType = GStmtType (Int, String)
 
-mergeT :: StmtType -> StmtType -> Either String StmtType -- todo : triple + calculations
+-- | merge two arrow types like function composition (and adjust buffer sizes if needed)
+mergeT :: StmtType -> StmtType -> Either String StmtType
 mergeT t1 t2 = unrename <$> joinT (applym theC ty1) (applym theC ty2)
   where
     ty1 = rename 1 t1
@@ -263,14 +264,6 @@ mergeT t1 t2 = unrename <$> joinT (applym theC ty1) (applym theC ty2)
 
     lstT (GaiwanArrow _ b) = lstT b
     lstT a = a
-
-    --(
-    -- GaiwanBuf (Var "n" False) GaiwanInt,
-    -- GaiwanArrow
-    --       (GaiwanBuf (Var "n" False) GaiwanInt)
-    --       (GaiwanArrow
-    --                     (GaiwanBuf (Plus (Times (Int 1) (Var "n" False)) (Int 0)
-    --)
 
     fstT (GaiwanArrow b _) = b
 
@@ -330,21 +323,19 @@ solveTCnt
   (Plus (Times (Int a4) (Var name4 False)) (Int b4))
     | name3 == name4 = do
       v <- case divMod (b3 - b2) a2 of
-        (_, x) | x > 0 -> Left "Not cleanly div"
+        (_, x) | x > 0 -> Left $ "The constant differences in buffersizes are not unifiable " ++ show ((b3 - b2) ,a2)
         (r1, 0) -> Right $ mod r1 a3
       Right
         ( map
-            ( \(Plus (Times (Int a1) (Var name1 False)) (Int b1)) -> Plus (Times (Int $ a1 * u) n) (Int $ b1 + a1 * v)
+            ( \(Plus (Times (Int a1) (Var _ False)) (Int b1)) -> Plus (Times (Int $ a1 * u) n) (Int $ b1 + a1 * v)
             )
             ll,
           Plus (Times (Int $ a4 * div a2 (gcd a2 a3)) n) (Int $ b4 + a4 * div (a2 * v + b2 - b3) a3)
         )
     where
+      a2Inva3 = if a3 == 1 then 1 else head $ filter (\x -> (x * a2) `mod` a3 == 1) [1..a3]
       n = Var name2 False
       u = div a3 (gcd a2 a3)
-
-doTheSubst :: [(String, Exp)] -> GStmtType a -> GStmtType a
-doTheSubst = error "not implemented"
 
 liftEitherTuple :: (a, Either b c) -> Either b (a, c)
 liftEitherTuple (a, Right x) = Right (a, x)
