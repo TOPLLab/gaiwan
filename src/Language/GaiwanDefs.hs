@@ -183,24 +183,15 @@ mapExp fOrig e = fromMaybe (_mapExp e) (fOrig e)
 maybeGaiwanInt :: Maybe StmtType -> Bool
 maybeGaiwanInt indexType = fromMaybe GaiwanInt indexType == GaiwanInt
 
--- >>> toTypedSmt (Mapper Nothing "lil" [("i",Nothing),("v", Just GaiwanInt)] (Var "v" False))
--- Right (TMapper (GaiwanArrow (GaiwanBuf (Var "n" False) GaiwanInt) (GaiwanBuf (Var "n" False) GaiwanInt)) "lil" ["i","v"] (Var "v" False))
-
 toTypedSmt :: Stmt -> Either String TypedStmt
 toTypedSmt = toTypedSmtEnv []
-
-fuckThisShit :: [StmtType] -> Either String StmtType
-fuckThisShit [a, b] = mergeT a b
-fuckThisShit [a] = Right a
-fuckThisShit (a : ar) = fuckThisShit ar >>= mergeT a
-fuckThisShit [] = Left "empty merge"
 
 toTypedSmtEnv :: [(String, StmtType)] -> Stmt -> Either String TypedStmt
 toTypedSmtEnv env (Abstraction outType name args []) = Left "Cannot make abstraction without content"
 toTypedSmtEnv env (Abstraction outType name args parts) = do
-  things <- maybe (Left "all the arguments of an abstraction need to be set") Right $ mapM liftMaybeTuple args
+  things <- checkSndJustList "all the arguments of an abstraction need to be set" args
   partType <- mapM (toTypedSmtEnv $ things ++ env) parts
-  typedParts <- fuckThisShit $ map typedStmt partType
+  typedParts <- mergeTList $ map typedStmt partType
   outT <- doRightCase outType typedParts
   return $
     TAbstraction outT name (map fst args) partType
@@ -218,7 +209,7 @@ toTypedSmtEnv env (Mapper outType name args@[(indexArg, indexType), (dataVarName
         body
 toTypedSmtEnv env (Shaper outType@(Just outTypeR@(GaiwanBuf _ elemType)) name args@((indexArg, indexType) : otherArgs) body)
   | maybeGaiwanInt indexType = do
-    extraArgsBuf <- maybe (Left "all the arguments of a shaper must have a specified buffer type") Right $ mapM liftMaybeTuple otherArgs
+    extraArgsBuf <- checkSndJustList "all the arguments of a shaper must have a specified buffer type" otherArgs
     extraArgs <- mapM liftMaybeBuffElemType otherArgs
     typeWithExpection (Just elemType) (((indexArg, GaiwanInt) : extraArgsBuf) ++ env) body
     return $
@@ -242,6 +233,12 @@ toTypedSmtEnv env (Reducer outType name args@[(indexArg, indexType), (accArg, ac
 
 type TaggedStmtType = GStmtType (Int, String)
 
+mergeTList :: [StmtType] -> Either String StmtType
+mergeTList [a, b] = mergeT a b
+mergeTList [a] = Right a
+mergeTList (a : ar) = mergeTList ar >>= mergeT a
+mergeTList [] = Left "empty merge"
+
 -- | merge two arrow types like function composition (and adjust buffer sizes if needed)
 mergeT :: StmtType -> StmtType -> Either String StmtType
 mergeT t1 t2 = unrename <$> joinT (applym theC ty1) (applym theC ty2)
@@ -260,7 +257,7 @@ mergeT t1 t2 = unrename <$> joinT (applym theC ty1) (applym theC ty2)
     --joinT1 l a (GaiwanArrow b c) | a == b = -- it just works?
     joinT1 l a@(GaiwanBuf size1 ta) (GaiwanArrow b@(GaiwanBuf size2 tb) c@(GaiwanBuf size3 tc)) | ta == tb = fixN l a b c
     joinT1 l a@(GaiwanBuf size1 ta) (GaiwanArrow b c@(GaiwanArrow _ _)) = error $ "join with deep arry:" ++ show c
-    joinT1 l a b = error $ "someting went wrong joining" ++ show (a, b)
+    joinT1 l a b = error $ "someting went wrong joining" ++ show (reverse (a : l), b, theC)
 
     lstT (GaiwanArrow _ b) = lstT b
     lstT a = a
@@ -278,7 +275,9 @@ mergeT t1 t2 = unrename <$> joinT (applym theC ty1) (applym theC ty2)
     constraints (GaiwanBuf _ a) (GaiwanBuf _ b) = constraints a b
 
     listConstraints :: [TaggedStmtType] -> [TaggedStmtType] -> [((Int, String), TaggedStmtType)]
-    listConstraints (a : ar) (b : bs) = let prev = constraints a b in prev ++ listConstraints (map (applym prev) ar) (map (applym prev) bs)
+    listConstraints (a : ar) (b : bs) =
+      let prev = constraints a b
+       in let r = listConstraints (map (applym prev) ar) (map (applym prev) bs) in map (second (applym r)) prev ++ r
     listConstraints [] [] = []
 
     applym :: [((Int, String), TaggedStmtType)] -> TaggedStmtType -> TaggedStmtType
@@ -322,13 +321,13 @@ solveTCnt
   (Plus (Times (Int a3) (Var name3 False)) (Int b3))
   (Plus (Times (Int a4) (Var name4 False)) (Int b4))
     | name3 == name4 = do
-      v <- case a2 `mod` a3 of
-        0 -> case (b3 - b2) `mod` a3 of
-          0 -> Right 0
-          _ -> Left "dddddddd"
-        _ -> case divMod (b3 - b2) a2 of
-          (r1, 0) -> Right $ mod r1 a3
-          _ -> Left $ "The constant differences in buffersizes are not unifiable " ++ show ((b3 - b2), a2)
+      -- Solve modulo operation to find value for v
+      v <-
+        maybe
+          (Left "Could not unify")
+          Right
+          $ find (\v -> (a2 * v - (b3 - b2)) `mod` a3 == 0) [0 .. a3]
+
       Right
         ( map
             ( \(Plus (Times (Int a1) (Var _ False)) (Int b1)) -> Plus (Times (Int $ a1 * u) n) (Int $ b1 + a1 * v)
@@ -337,13 +336,14 @@ solveTCnt
           Plus (Times (Int $ a4 * div a2 (gcd a2 a3)) n) (Int $ b4 + a4 * div (a2 * v + b2 - b3) a3)
         )
     where
-      a2Inva3 = if a3 == 1 then 1 else head $ filter (\x -> (x * a2) `mod` a3 == 1) [1 .. a3]
       n = Var name2 False
       u = div a3 (gcd a2 a3)
 
-liftEitherTuple :: (a, Either b c) -> Either b (a, c)
-liftEitherTuple (a, Right x) = Right (a, x)
-liftEitherTuple (a, Left x) = Left x
+checkJust :: String -> Maybe a -> Either String a
+checkJust msg = maybe (Left msg) Right
+
+checkSndJustList :: String -> [(b, Maybe a)] -> Either String [(b, a)]
+checkSndJustList msg a = checkJust msg $ mapM liftMaybeTuple a
 
 liftMaybeTuple :: (a, Maybe b) -> Maybe (a, b)
 liftMaybeTuple (a, Just x) = Just (a, x)
@@ -363,11 +363,6 @@ bufferType Nothing = Left "no type given"
 -- | Get the type of the elements of a buffer argument
 liftMaybeBuffElemType :: (String, Maybe StmtType) -> Either String (String, StmtType)
 liftMaybeBuffElemType (a, b) = (a,) <$> bufferType b
-
--- >>> mapM liftEitherTuple [(5, Right 1), (6, Right 2)] :: Either String [(Integer, Integer)]
--- Right [(5,1),(6,2)]
--- >>> mapM liftEitherTuple [(5, Right 1), (6, Left "nope")] :: Either String [(Integer, Integer)]
--- Left "nope"
 
 -- >>> mapM liftMaybeTuple [(5, Just 1), (6, Nothing)] :: Maybe [(Integer, Integer)]
 -- Nothing

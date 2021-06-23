@@ -44,7 +44,7 @@ compile =
     (\err -> Left $ "Parsing failed: " ++ err)
     (Right . uncurry Code.serialize . Code.compile . mkCode) -- todo make either
 
-mkCode (Prog defines main) = undefined 
+mkCode (Prog defines main) = undefined
 
 convert :: Program -> IO [[Integer]]
 convert program =
