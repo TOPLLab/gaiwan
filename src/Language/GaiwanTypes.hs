@@ -208,6 +208,7 @@ norm (Times (Int a2) (Var name2 False)) = Right (name2, a2, 0)
 norm (Times (Var name2 False) (Int a2)) = Right (name2, a2, 0)
 norm (Var name2 False) = Right (name2, 1, 0)
 norm (Plus (Var name2 False) (Int b)) = Right (name2, 1, b)
+norm (Plus (Times (Var name2 False) (Int a)) (Int b)) = Right (name2, a, b)
 norm (Plus (Times (Int a) (Var name2 False)) (Int b)) = Right (name2, a, b)
 norm idk = Left $ show idk -- TODO
 
@@ -227,21 +228,21 @@ solveTCnt
       -- Solve modulo operation to find value for v
       v <-
         maybe
-          (Left "Could not unify")
+          (Left $ "Could not unify" ++ show (a2,b3-b2,a3) ++ show (map  (\v -> (a2 * v - (b3 - b2)) `mod` a3 == 0) [0 .. (abs a3)]))
           Right
-          $ find (\v -> (a2 * v - (b3 - b2)) `mod` a3 == 0) [0 .. a3]
+          $ find (\v -> (a2 * v - (b3 - b2)) `mod` a3 == 0) [0 .. (abs a3)]
 
       unifiedSourceSizes <-
         (`mapM` sourceSizes) $ \(name1, a1, b1) ->
           if name1 == name2
             then Right $ Plus (Times (Int $ a1 * u) n) (Int $ b1 + a1 * v)
             else Left "All size varaibles for buffers in a single acion must be the same"
-      let outputSize = Plus (Times (Int $ a4 * div a2 (gcd a2 a3)) n) (Int $ b4 + a4 * div (a2 * v + b2 - b3) a3)
+      let outputSize = Plus (Times (Int $ a4 * div (a2 * u) a3) n) (Int $ b4 + a4 * div (a2 * v + b2 - b3) a3)
 
       return (unifiedSourceSizes, outputSize)
     where
       n = Var name2 False
-      u = div a3 (gcd a2 a3)
+      u = abs $  div a3 (gcd a2 a3)
 
 typeWithExpectionAndJustArgs :: Maybe StmtType -> [(String, Maybe StmtType)] -> Exp -> TypeingOut StmtType
 typeWithExpectionAndJustArgs x args exp = maybe (Left "failed to lift maybe tuple") b (mapM liftMaybeTuple args)

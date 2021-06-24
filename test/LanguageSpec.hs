@@ -138,6 +138,31 @@ spec = do
         (GaiwanArrow (GaiwanBuf (Plus (Times (Int 7) (Var "n" False)) (Int 3)) GaiwanInt) (GaiwanBuf (Var "n" False) GaiwanInt))
         `shouldBe` Right (GaiwanArrow (GaiwanBuf (Plus (Times (Int 7) (Var "n" False)) (Int 2)) GaiwanInt) (GaiwanBuf (Plus (Times (Int 11) (Var "n" False)) (Int 3)) GaiwanInt))
 
+    it "Merges types correctly: n->100-n # 200-2n->n => n->n+100" $
+      mergeT
+        (GaiwanArrow (GaiwanBuf (Var "n" False) GaiwanInt) (GaiwanBuf (Plus (Times (Int $ -1) (Var "n" False)) (Int 100)) GaiwanInt))
+        (GaiwanArrow (GaiwanBuf (Plus (Times (Int $ -1) (Var "n" False)) (Int 200)) GaiwanInt) (GaiwanBuf (Var "n" False) GaiwanInt))
+        `shouldBe` Right (GaiwanArrow (GaiwanBuf (Var "n" False) GaiwanInt) (GaiwanBuf (Plus (Var "n" False) (Int 100)) GaiwanInt))
+
+    it "Merges types correctly: n->100-n # 200-2n->n => 2n->n+50" $
+      mergeT
+        (GaiwanArrow (GaiwanBuf (Var "n" False) GaiwanInt) (GaiwanBuf (Plus (Times (Int $ -1) (Var "n" False)) (Int 100)) GaiwanInt))
+        (GaiwanArrow (GaiwanBuf (Plus (Times (Int $ -2) (Var "n" False)) (Int 200)) GaiwanInt) (GaiwanBuf (Times (Var "n" False) (Int 1)) GaiwanInt))
+        `shouldBe` Right (GaiwanArrow (GaiwanBuf (Times (Int 2) (Var "n" False)) GaiwanInt) (GaiwanBuf (Plus (Var "n" False) (Int 50)) GaiwanInt))
+
+    it "Merges types correctly: n->100-n # 2n->n => 2n->50-n" $
+      mergeT
+        (GaiwanArrow (GaiwanBuf (Var "n" False) GaiwanInt) (GaiwanBuf (Plus (Times (Int $ -1) (Var "n" False)) (Int 100)) GaiwanInt))
+        (GaiwanArrow (GaiwanBuf (Plus (Times (Int 2) (Var "n" False)) (Int 0)) GaiwanInt) (GaiwanBuf (Times (Var "n" False) (Int 1)) GaiwanInt))
+        `shouldBe` Right (GaiwanArrow (GaiwanBuf (Times (Int 2) (Var "n" False)) GaiwanInt) (GaiwanBuf (Plus (Times (Int $ -1) (Var "n" False)) (Int 50)) GaiwanInt))
+
+    it "Merges types correctly: n->2n+2 # 2n->50-n => n->49-n" $
+      mergeT
+        (GaiwanArrow (GaiwanBuf (Var "n" False) GaiwanInt) (GaiwanBuf (Plus (Times (Int $ 2) (Var "n" False)) (Int 2)) GaiwanInt))
+        (GaiwanArrow (GaiwanBuf (Plus (Times (Int 2) (Var "n" False)) (Int 0)) GaiwanInt) (GaiwanBuf (Plus (Times (Var "n" False) (Int $ -1)) (Int 50)) GaiwanInt))
+        `shouldBe` Right (GaiwanArrow (GaiwanBuf (Var "n" False) GaiwanInt) (GaiwanBuf (Plus (Times (Int $ -1) (Var "n" False)) (Int 49)) GaiwanInt))
+
+
     it "Merges types correctly: n->2n+1 # 2n->n => FAIL" $
       mergeT
         (GaiwanArrow (GaiwanBuf (Var "n" False) GaiwanInt) (GaiwanBuf (Times (Var "n" False) (Int 2)) GaiwanInt))
