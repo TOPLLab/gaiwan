@@ -48,6 +48,7 @@ let
     nodePackages.prettier
     haskellPackages.profiteur # treemap of profile
     pkgs.opencl-clhpp # for cl2.hpp
+    pkgs.ormolu
     pkgs.python3
     pkgs.opencl-info
     pkgs.ocl-icd # for -lOpenCL

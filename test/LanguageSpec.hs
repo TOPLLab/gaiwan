@@ -162,7 +162,6 @@ spec = do
         (GaiwanArrow (GaiwanBuf (Plus (Times (Int 2) (Var "n" False)) (Int 0)) GaiwanInt) (GaiwanBuf (Plus (Times (Var "n" False) (Int $ -1)) (Int 50)) GaiwanInt))
         `shouldBe` Right (GaiwanArrow (GaiwanBuf (Var "n" False) GaiwanInt) (GaiwanBuf (Plus (Times (Int $ -1) (Var "n" False)) (Int 49)) GaiwanInt))
 
-
     it "Merges types correctly: n->2n+1 # 2n->n => FAIL" $
       mergeT
         (GaiwanArrow (GaiwanBuf (Var "n" False) GaiwanInt) (GaiwanBuf (Times (Var "n" False) (Int 2)) GaiwanInt))

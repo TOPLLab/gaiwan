@@ -10,7 +10,6 @@ module Language.GaiwanDefs
 where
 
 import Code.Definitions
-
 import Data.Maybe
 
 data Exp

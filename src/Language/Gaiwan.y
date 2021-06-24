@@ -56,12 +56,12 @@ Program : stmtList Exp                                      { Prog (reverse $1) 
 
 Stmt  :  function var '(' varlist ')' maybetype StmtBody    { mkFun $1 $6 $2  (reverse $4) $7 }
       |  reducer  var '(' varlist ')' maybetype '(' ExpBase ')' StmtBody { Language.GaiwanTypes.Reducer $6 $2 (reverse $4)  $8 $10 }
-      |  abstraction var '(' varlist ')' maybetype bracO   pipedStmt bracC  {Language.GaiwanTypes.Abstraction $6 $2 (reverse $4) $8}
+      |  abstraction var '(' varlist ')' maybetype bracO   pipedStmt bracC  {Language.GaiwanTypes.Abstraction $6 $2 (reverse $4) $8 }
 
 
 
-pipedStmt : Stmt                                         { [$1] }
-         | pipedStmt pipe Stmt %prec PIPE                { $3 : $1 }
+pipedStmt : Stmt                                            { [$1] }
+         | pipedStmt pipe Stmt %prec PIPE                   { $3 : $1 }
 
 StmtBody : bracO ExpBase bracC  {$2 }
 
@@ -109,7 +109,7 @@ typedvar : var {($1, Nothing) :: (String, Maybe StmtType) }
 maybetype : {- empty -} {Nothing }
           | ':' type {Just $2 }
 
-type : int {GaiwanInt}
+type : int {GaiwanInt }
      | var {TVar $1 }
      | tuple '(' typelist ')'                               { GaiwanTuple (reverse $3) }
 

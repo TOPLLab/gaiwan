@@ -228,7 +228,7 @@ solveTCnt
       -- Solve modulo operation to find value for v
       v <-
         maybe
-          (Left $ "Could not unify" ++ show (a2,b3-b2,a3) ++ show (map  (\v -> (a2 * v - (b3 - b2)) `mod` a3 == 0) [0 .. (abs a3)]))
+          (Left $ "Could not unify" ++ show (a2, b3 - b2, a3) ++ show (map (\v -> (a2 * v - (b3 - b2)) `mod` a3 == 0) [0 .. (abs a3)]))
           Right
           $ find (\v -> (a2 * v - (b3 - b2)) `mod` a3 == 0) [0 .. (abs a3)]
 
@@ -242,7 +242,7 @@ solveTCnt
       return (unifiedSourceSizes, outputSize)
     where
       n = Var name2 False
-      u = abs $  div a3 (gcd a2 a3)
+      u = abs $ div a3 (gcd a2 a3)
 
 typeWithExpectionAndJustArgs :: Maybe StmtType -> [(String, Maybe StmtType)] -> Exp -> TypeingOut StmtType
 typeWithExpectionAndJustArgs x args exp = maybe (Left "failed to lift maybe tuple") b (mapM liftMaybeTuple args)
