@@ -1,4 +1,4 @@
 #!/usr/bin/env sh
-sed -i '/^.\{5,\}}$/{s/\s\{3,\}{/                                                                                              {/;s/^\(.\{60\}\)\s\+{/\1{/;s/ *}$/ }/}' src/**/*.y
+sed -i '/^.\{4,\}[^-]}$/{s/\s\{3,\}{/                                                                                              {/;s/^\(.\{60\}\)\s\+{/\1{/;s/ *}$/ }/}' src/**/*.y
 prettier -w --prose-wrap=always **/*.md
-ormolu -i **/*.hs
+ormolu -m inplace **/*.hs
