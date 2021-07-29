@@ -87,4 +87,4 @@ removeDoubles [] = []
 removeDoubles ((k, v) : r) = (k, v) : removeDoubles (L.filter (\(ko, _) -> ko /= k) r)
 
 canonicalBufferNames :: [GPUBuffer] -> [GPUBuffer]
-canonicalBufferNames buffers = zipWith (\a@(GPUBuffer _ s) newname -> GPUBuffer newname s) buffers $ GPUBufferName <$> [1000 ..]
+canonicalBufferNames buffers = zipWith (\a@(GPUBuffer _ shape s) newname -> GPUBuffer newname shape s) buffers $ GPUBufferName <$> [1000 ..]

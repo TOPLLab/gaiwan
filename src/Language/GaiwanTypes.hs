@@ -69,6 +69,13 @@ typedStmt (TShaper t _ _ _) = t
 typedStmt (TReducer t _ _ _ _) = t
 typedStmt (TAbstraction t _ _ _) = t
 
+data TypedProgram
+  = TypedProg [TypedStmt] Exp
+  deriving (Show, Eq)
+
+checkType :: Program -> TypeingOut TypedProgram
+checkType (Prog s e) = TypedProg <$> (mapM toTypedSmt s) <*> (Right e)
+
 data Program
   = Prog [Stmt] Exp
   deriving (Show, Eq)

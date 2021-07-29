@@ -34,10 +34,10 @@ library
       Code.Flatten
       Code.SCode
       Code.Serialize
-      CodeGen.CLike
-      CodeGen.OpenCL
+      -- CodeGen.CLike
+      -- CodeGen.OpenCL
       CodeGen.Pipelining
-      CodeGen.Render
+      --CodeGen.Render
       Language.Gaiwan
       Language.GaiwanDefs
       Language.GaiwanTypes
@@ -115,7 +115,7 @@ test-suite gaiwan-test
       CodeSpec
       LanguageSpec
       RenderSpec
-      TestPrograms
+      --TestPrograms
       Paths_gaiwan
   hs-source-dirs:
       test
