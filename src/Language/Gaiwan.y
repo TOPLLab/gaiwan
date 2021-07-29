@@ -103,17 +103,22 @@ avar : var                                                  { Var $1 False }
 pipedExp : ExpKinds                                         { [$1] }
          | pipedExp pipe ExpKinds %prec PIPE                { $3 : $1 }
 
-typedvar : var {($1, Nothing) :: (String, Maybe StmtType) }
-         | var ':' type {($1, Just $3) :: (String, Maybe StmtType) }
+typedvar : var {($1, Nothing) :: (String, Maybe GStmtTypeOrShapeDefault) }
+         | var ':' type {($1, Just $3) :: (String, Maybe GStmtTypeOrShapeDefault) }
 
 maybetype : {- empty -} {Nothing }
           | ':' type {Just $2 }
 
-type : int {GaiwanInt }
-     | var {TVar $1 }
-     | tuple '(' typelist ')'                               { GaiwanTuple (reverse $3) }
-
 {- No arrow type needed in the parser -}
+type : shape {AShape $1 }
+     | shape '[' ExpBase ']'  { AType $ GaiwanBuf $3 $1 }
+
+shape : int { GaiwanInt }
+     | var { TVar $1 }
+     | tuple '(' shapelist ')'                              {  GaiwanTuple (reverse $3) }
+
+shapelist : shape {[$1] }
+         | shapelist ',' shape { $3 : $1 }
 
 typelist : type {[$1] }
          | typelist ',' type { $3 : $1 }
@@ -135,7 +140,7 @@ cleanPiped x   = PipedExp x
 
 mkApp (Var name builtin) = App name builtin
 
-mkFun :: FunctionType -> (Maybe StmtType) -> String -> [(String, Maybe StmtType)] -> Exp -> Stmt
+mkFun :: FunctionType -> (Maybe GStmtTypeOrShapeDefault) -> String -> [(String, Maybe GStmtTypeOrShapeDefault)] -> Exp -> Stmt
 mkFun Language.Tokens.Mapper   =  Language.GaiwanTypes.Mapper
 mkFun Language.Tokens.Shaper =  Language.GaiwanTypes.Shaper
 

@@ -71,8 +71,8 @@ flattenBuffers actions = assignBuffers actionsAndNeed
     -- returns (currently free buffers, current lookup table)
     assign :: (GPUBuffer, Maybe GPUBuffer) -> (Set GPUBuffer, [(GPUBuffer, GPUBuffer)]) -> (Set GPUBuffer, [(GPUBuffer, GPUBuffer)])
     assign (_, Just _) (free, table) = (free, table) -- do nothing if found
-    assign (ins@(GPUBuffer name size), Nothing) (free, table) =
-      case lookupMin $ S.filter (\(GPUBuffer _ s) -> s == size) free of
+    assign (ins@(GPUBuffer name _ size), Nothing) (free, table) =
+      case lookupMin $ S.filter (\(GPUBuffer _ _ s) -> s == size) free of
         Just b -> (delete b free, (ins, b) : table) -- use if free availible
         Nothing -> (free, (ins, ins) : table) -- new if not
 

@@ -1,6 +1,7 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TupleSections #-}
+{-# OPTIONS_GHC -Wno-incomplete-patterns #-}
 
 module CodeGen.Pipelining (Pipeline, collectBuffers, convertPls) where
 
@@ -18,8 +19,8 @@ import Language.GaiwanDefs
 import Language.GaiwanTypes
 
 data PipelineStep = PipelineStep
-  { _outBuf :: [GPUBuffer],
-    _expValue :: [Exp]
+  { _outBuf :: GPUBuffer,
+    _expValue :: Exp
   }
   deriving (Show)
 
@@ -63,8 +64,8 @@ convP collapse x = convP2 (if collapse then x else x >>= reifyShuffle)
       t <- lookupDef n
       y <- x
       case t of
-        Just f@Shaper {} -> return $ convPShuffler y f a
-        Just f@Shaper {} -> convPMapper y f a
+        Just f@TShaper {} -> return $ convPShuffler y f a
+        Just f@TMapper {} -> convPMapper y f a
         _ -> error $ "Unknown name " ++ show n
 
 -- | Transform the top PipeLine expression into a buffer read with a additional id shuffle
@@ -183,8 +184,8 @@ convPSplitter numBuf offset x =
 --  - buffername
 --  - bufferlen
 --  - ...
-convPShuffler :: Pipeline -> Stmt -> Exp -> Pipeline
-convPShuffler x (Shaper name argnames bodys) (App n _ otherArgs) = x & shuffle ?~ appliedActualShuffs
+convPShuffler :: Pipeline -> TypedStmt -> Exp -> Pipeline
+convPShuffler x (TShaper name argnames bodys _) (App n _ otherArgs) = x & shuffle ?~ appliedActualShuffs
   where
     -- Read the arguments into an Either GPUBufferArg RegularArg
     namedArgs :: [Either (String, (GPUBuffer, Exp, Int)) (String, Exp)]
@@ -247,7 +248,7 @@ convPShuffler x (Shaper name argnames bodys) (App n _ otherArgs) = x & shuffle ?
 
 -- | Execute a mapper
 -- If a mapper follows a mapper they are combined
-convPMapper :: Pipeline -> TypedStmt  -> Exp -> SCode a Pipeline
+convPMapper :: Pipeline -> TypedStmt -> Exp -> SCode a Pipeline
 convPMapper x@Pipeline {_shuffle = Nothing} (TMapper _ _ argNames bodys) (App n _ args) =
   return $
     x

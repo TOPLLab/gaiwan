@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TupleSections #-}
 
@@ -5,33 +6,55 @@ module Language.GaiwanTypes
   ( Program (..),
     Stmt (..),
     StmtType (..),
-    GStmtType (..),
+    GAbsType (..),
+    GShape (..),
     TypedStmt (..),
+    VarFreeStmtType (..),
+    GStmtTypeOrShape (..),
+    GStmtTypeOrShapeDefault,
     stmtName,
     toTypedSmt,
-    stmt,
+    --    stmt,
     mergeT,
   )
 where
 
+import Code.Definitions
 import Data.Bifunctor
 import Data.Foldable
 import Data.Maybe
 import Language.GaiwanDefs
 
-data GStmtType a
-  = GaiwanInt -- TODO: float
-  | GaiwanTuple [GStmtType a]
-  | GaiwanArrow (GStmtType a) (GStmtType a)
-  | GaiwanBuf Exp (GStmtType a)
-  | TVar a
+data GAbsType a
+  = GaiwanArrow (GStmtTypeOrShape a) (GStmtTypeOrShape a)
+  | GaiwanBuf Exp (GShape a)
   deriving (Show, Eq)
 
-type StmtType = GStmtType String
+data Void
 
-type TaggedStmtType = GStmtType (Int, String)
+data GStmtTypeOrShape a = AType (GAbsType a) | AShape (GShape a) deriving (Show, Eq)
+
+type GStmtTypeOrShapeDefault = GStmtTypeOrShape String
+
+type EnvType = [(String, GStmtTypeOrShapeDefault)]
+
+type MaybeEnvType = [(String, Maybe GStmtTypeOrShapeDefault)]
+
+type VarFreeStmtType = GAbsType Void
+
+type StmtType = GAbsType String
+
+type StmtShape = GShape String
+
+type Tag = (Int, String)
+
+type TaggedStmtType = GStmtTypeOrShape Tag
 
 type TypeingOut = Either String
+
+-- eventually get rid of this... and make our own propper error messsages
+instance MonadFail TypeingOut where
+  fail = Left
 
 data TypedStmt
   = TMapper StmtType String [String] Exp
@@ -51,70 +74,82 @@ data Program
   deriving (Show, Eq)
 
 data Stmt
-  = Mapper (Maybe StmtType) String [(String, Maybe StmtType)] Exp
-  | Shaper (Maybe StmtType) String [(String, Maybe StmtType)] Exp
-  | Reducer (Maybe StmtType) String [(String, Maybe StmtType)] Exp Exp
-  | Abstraction (Maybe StmtType) String [(String, Maybe StmtType)] [Stmt]
+  = Mapper (Maybe GStmtTypeOrShapeDefault) String [(String, Maybe GStmtTypeOrShapeDefault)] Exp
+  | Reducer (Maybe GStmtTypeOrShapeDefault) String [(String, Maybe GStmtTypeOrShapeDefault)] Exp Exp
+  | Shaper (Maybe GStmtTypeOrShapeDefault) String [(String, Maybe GStmtTypeOrShapeDefault)] Exp
+  | Abstraction (Maybe GStmtTypeOrShapeDefault) String [(String, Maybe GStmtTypeOrShapeDefault)] [Stmt]
   deriving (Show, Eq)
 
-stmt :: forall t. Stmt -> (String -> [(String, Maybe StmtType)] -> Exp -> t) -> t
-stmt (Shaper _ a b c) f = f a b c
-stmt (Mapper _ a b c) f = f a b c
+stmt :: forall t. TypedStmt -> (StmtType -> String -> [String] -> t) -> t
+stmt (TShaper a b c _) f = f a b c
+stmt (TMapper a b c _) f = f a b c
+stmt (TReducer a b c _ _) f = f a b c
+stmt (TAbstraction a b c _) f = f a b c
 
-stmtName :: Stmt -> String
-stmtName x = stmt x (\name b c -> name)
+stmtName :: TypedStmt -> String
+stmtName x = stmt x (\_ name _ -> name)
 
-maybeGaiwanInt :: Maybe StmtType -> Bool
-maybeGaiwanInt indexType = fromMaybe GaiwanInt indexType == GaiwanInt
+maybeGaiwanInt :: (Eq a) => Maybe (GStmtTypeOrShape a) -> Bool
+maybeGaiwanInt indexType = fromMaybe (AShape GaiwanInt) indexType == AShape GaiwanInt
 
 toTypedSmt :: Stmt -> TypeingOut TypedStmt
 toTypedSmt = toTypedSmtEnv []
 
-toTypedSmtEnv :: [(String, StmtType)] -> Stmt -> TypeingOut TypedStmt
+toTypedSmtEnv :: EnvType -> Stmt -> TypeingOut TypedStmt
 toTypedSmtEnv env (Abstraction outType name args []) = Left "Cannot make abstraction without content"
 toTypedSmtEnv env (Abstraction outType name args parts) = do
   things <- checkSndJustList "all the arguments of an abstraction need to be set" args
   partType <- mapM (toTypedSmtEnv $ things ++ env) parts
   typedParts <- mergeTList $ map typedStmt partType
-  outT <- doRightCase outType typedParts
+  (AType outT) <- doRightCase outType (AType typedParts)
   return $
     TAbstraction outT name (map fst args) partType
-toTypedSmtEnv env (Mapper outType name args@[(indexArg, indexType), (dataVarName, Just dataVarType)] body)
+toTypedSmtEnv env (Mapper outType name args@[(indexArg, indexType), (dataVarName, Just (AShape dataVarType))] body)
   | maybeGaiwanInt indexType = do
-    retType <- typeWithExpection outType ([(indexArg, GaiwanInt), (dataVarName, dataVarType)] ++ env) body
+    AShape retType <- typeWithExpection outType ([(indexArg, AShape GaiwanInt), (dataVarName, AShape dataVarType)] ++ env) body
     return $
       TMapper
         ( GaiwanArrow
-            (GaiwanBuf (Var "n" False) dataVarType)
-            (GaiwanBuf (Var "n" False) retType)
+            (AType (GaiwanBuf (Var "n" False) dataVarType))
+            (AType (GaiwanBuf (Var "n" False) retType))
         )
         name
         (map fst args)
         body
-toTypedSmtEnv env (Shaper outType@(Just outTypeR@(GaiwanBuf _ elemType)) name args@((indexArg, indexType) : otherArgs) body)
+toTypedSmtEnv env (Mapper outType name args body) = Left "Incorrect argument given to mapper"
+toTypedSmtEnv env (Shaper outType@(Just (AType outTypeR@(GaiwanBuf _ elemType))) name args@((indexArg, indexType) : otherArgs) body)
   | maybeGaiwanInt indexType = do
     extraArgsBuf <- checkSndJustList "all the arguments of a shaper must have a specified buffer type" otherArgs
     extraArgs <- mapM liftMaybeBuffElemType otherArgs
-    typeWithExpection (Just elemType) (((indexArg, GaiwanInt) : extraArgsBuf) ++ env) body
+    typeWithExpection (Just $ AShape elemType) (((indexArg, AShape GaiwanInt) : extraArgsBuf) ++ env) body
     return $
       TShaper
-        (foldr (GaiwanArrow . snd) outTypeR extraArgsBuf)
+        (foldr (\n acc -> GaiwanArrow (snd n) (AType acc)) outTypeR extraArgsBuf)
         name
         (map fst args)
         body
+toTypedSmtEnv env Shaper {} = Left "Incorrect argument given to Shaper"
 toTypedSmtEnv env (Reducer outType name args@[(indexArg, indexType), (accArg, accType), (dataArg, dataType@(Just dataTypeR))] initExp body)
   | maybeGaiwanInt indexType = do
-    checkecAccType <- typeWithExpection accType env initExp
+    AShape checkecAccType <- typeWithExpection accType env initExp
+    if AShape checkecAccType == dataTypeR then return () else fail "Accumulator type and init expression are not of the same type"
     outElemType <- bufferType1 outType
-    checkedOutType <- typeWithExpectionAndJustArgs outElemType ([(indexArg, Just GaiwanInt), (accArg, Just checkecAccType), (dataArg, dataType)] ++ map (second Just) env) body
+    AShape checkedOutType <-
+      typeWithExpectionAndJustArgs
+        (AShape <$> outElemType)
+        ( [(indexArg, Just $ AShape GaiwanInt), (accArg, Just $ AShape checkecAccType), (dataArg, dataType)] ++ map (second Just) env
+        )
+        body
     return $
       TReducer
-        (GaiwanArrow (GaiwanBuf (Var "n" False) dataTypeR) (GaiwanBuf (Int 1) checkedOutType))
+        (GaiwanArrow (AType (GaiwanBuf (Var "n" False) checkecAccType)) (AType (GaiwanBuf (Int 1) checkedOutType)))
         name
         (map fst args)
         initExp
         body
+toTypedSmtEnv env Reducer {} = Left "Incorrect argument given to Reducer"
 
+-- | Paste a list of Statement Types onto each other
 mergeTList :: [StmtType] -> TypeingOut StmtType
 mergeTList [a, b] = mergeT a b
 mergeTList [a] = Right a
@@ -123,63 +158,88 @@ mergeTList [] = Left "empty merge"
 
 -- | merge two arrow types like function composition (and adjust buffer sizes if needed)
 mergeT :: StmtType -> StmtType -> TypeingOut StmtType
-mergeT t1 t2 = unrename <$> joinT (applym theC ty1) (applym theC ty2)
+mergeT t1 t2 = do
+  theC <- constraints toMatch1 toMatch2
+  res <- unrename <$> joinT (applym theC ty1) (applym theC ty2)
+  case res of
+    (AType x) -> return x
+    b -> error "Unexpected output for joinT, was Shape, expected Type" -- should be dead code
   where
-    ty1 = rename 1 t1
-    ty2 = rename 2 t2
+    ty1 = rename 1 (AType t1)
+    ty2 = rename 2 (AType t2)
 
     toMatch1 = lstT ty1
     toMatch2 = fstT ty2
 
-    joinT :: (Eq a, Show a) => GStmtType a -> GStmtType a -> TypeingOut (GStmtType a)
+    joinT :: (Eq a, Show a) => GStmtTypeOrShape a -> GStmtTypeOrShape a -> TypeingOut (GStmtTypeOrShape a)
     joinT = joinT1 []
 
-    joinT1 :: (Eq a, Show a) => [GStmtType a] -> GStmtType a -> GStmtType a -> TypeingOut (GStmtType a)
-    joinT1 l (GaiwanArrow a@(GaiwanBuf size1 ta) b) c = joinT1 (a : l) b c
+    joinT1 :: (Eq a, Show a) => [GAbsType a] -> GStmtTypeOrShape a -> GStmtTypeOrShape a -> TypeingOut (GStmtTypeOrShape a)
+    joinT1 l (AType (GaiwanArrow (AType a@(GaiwanBuf size1 ta)) b)) c = joinT1 (a : l) b c
     --joinT1 l a (GaiwanArrow b c) | a == b = -- it just works?
-    joinT1 l a@(GaiwanBuf size1 ta) (GaiwanArrow b@(GaiwanBuf size2 tb) c@(GaiwanBuf size3 tc)) | ta == tb = unifySize l a b c
-    joinT1 l a@(GaiwanBuf size1 ta) (GaiwanArrow b c@(GaiwanArrow _ _)) = error $ "join with deep arry:" ++ show c
-    joinT1 l a b = error $ "someting went wrong joining" ++ show (reverse (a : l), b, theC)
+    joinT1
+      l
+      (AType a@(GaiwanBuf size1 ta)) --                                                       SANITY
+      (AType (GaiwanArrow (AType b@(GaiwanBuf size2 tb)) (AType c@(GaiwanBuf size3 tc)))) | ta == tb = do
+        out <- unifySize l a b c
+        return $ AType out
+    joinT1 l (AType a@(GaiwanBuf size1 ta)) (AType (GaiwanArrow b (AType c@(GaiwanArrow _ _)))) = error $ "join with deep arry:" ++ show c
+    joinT1 l (AType a) b = error $ "someting went wrong joining" ++ show (reverse (a : l), b)
+    joinT1 l a b = error "someting went seriously wrong joining"
 
-    lstT (GaiwanArrow _ b) = lstT b
+    lstT (AType (GaiwanArrow _ b)) = lstT b
     lstT a = a
 
-    fstT (GaiwanArrow b _) = b
+    fstT (AType (GaiwanArrow b _)) = b
 
-    theC = constraints toMatch1 toMatch2
-    constraints :: TaggedStmtType -> TaggedStmtType -> [((Int, String), TaggedStmtType)]
-    constraints (TVar a) (TVar b) | a == b = []
-    constraints (TVar a) b = [(a, b)]
-    constraints a (TVar b) = [(b, a)]
-    constraints GaiwanInt GaiwanInt = []
-    constraints (GaiwanTuple a) (GaiwanTuple b) = listConstraints a b
-    constraints (GaiwanArrow a1 a2) (GaiwanArrow b1 b2) = listConstraints [a1, a2] [b1, b2]
-    constraints (GaiwanBuf _ a) (GaiwanBuf _ b) = constraints a b
+    constraints :: TaggedStmtType -> TaggedStmtType -> TypeingOut [(Tag, GShape Tag)]
+    constraints (AShape a) (AShape b) = constraintss a b
+    constraints (AType (GaiwanArrow a1 a2)) (AType (GaiwanArrow b1 b2)) = listConstraints [a1, a2] [b1, b2]
+    constraints (AType (GaiwanBuf _ a)) (AType (GaiwanBuf _ b)) = constraintss a b
+    constraints _ _ = Left "Could not match arguments"
 
-    listConstraints :: [TaggedStmtType] -> [TaggedStmtType] -> [((Int, String), TaggedStmtType)]
-    listConstraints (a : ar) (b : bs) =
-      let prev = constraints a b
-       in let r = listConstraints (map (applym prev) ar) (map (applym prev) bs) in map (second (applym r)) prev ++ r
-    listConstraints [] [] = []
+    constraintss :: GShape Tag -> GShape Tag -> TypeingOut [(Tag, GShape Tag)]
+    constraintss (TVar a) (TVar b) | a == b = Right []
+    constraintss (TVar a) b = Right [(a, b)]
+    constraintss a (TVar b) = Right [(b, a)]
+    constraintss GaiwanInt GaiwanInt = Right []
+    constraintss (GaiwanTuple a) (GaiwanTuple b) = listConstraints (map AShape a) (map AShape b)
+    constraintss _ _ = Left "Could not match arguments"
 
-    applym :: [((Int, String), TaggedStmtType)] -> TaggedStmtType -> TaggedStmtType
+    listConstraints :: [TaggedStmtType] -> [TaggedStmtType] -> TypeingOut [(Tag, GShape Tag)]
+    listConstraints (a : ar) (b : bs) = do
+      prev <- constraints a b
+      r <- listConstraints (map (applym prev) ar) (map (applym prev) bs)
+      return $ map (second (applyms r)) prev ++ r
+    listConstraints [] [] = return []
+    listConstraints _ _ = fail "unequal length in listConstraints"
+
+    -- TODO: remove
+    applym :: [(Tag, GShape Tag)] -> TaggedStmtType -> TaggedStmtType
     applym m = apply $ \name -> fromMaybe (TVar name) (lookup name m)
 
-    rename :: Int -> StmtType -> TaggedStmtType
+    applyms :: [(Tag, GShape Tag)] -> GShape Tag -> GShape Tag
+    applyms m = applys $ \name -> fromMaybe (TVar name) (lookup name m)
+
+    rename :: Int -> GStmtTypeOrShapeDefault -> TaggedStmtType
     rename v = apply $ \name -> TVar (v, name)
 
-    apply :: (a -> GStmtType b) -> GStmtType a -> GStmtType b
-    apply f (TVar a) = f a
-    apply f GaiwanInt = GaiwanInt
-    apply f (GaiwanTuple a) = GaiwanTuple $ map (apply f) a
-    apply f (GaiwanArrow a1 a2) = GaiwanArrow (apply f a1) (apply f a2)
-    apply f (GaiwanBuf n a) = GaiwanBuf n $ apply f a
+    apply :: (a -> GShape b) -> GStmtTypeOrShape a -> GStmtTypeOrShape b
+    apply f (AShape xx) = AShape $ applys f xx
+    apply f (AType (GaiwanArrow a1 a2)) = AType $ GaiwanArrow (apply f a1) (apply f a2)
+    apply f (AType (GaiwanBuf n a)) = AType $ GaiwanBuf n $ applys f a
 
-    unrename :: TaggedStmtType -> StmtType
+    -- apply for shapes only
+    applys :: (a -> GShape b) -> GShape a -> GShape b
+    applys f (TVar a) = f a
+    applys f GaiwanInt = GaiwanInt
+    applys f (GaiwanTuple a) = GaiwanTuple $ map (applys f) a
+
+    unrename :: TaggedStmtType -> GStmtTypeOrShapeDefault
     unrename = apply $ \name -> TVar $ show name
 
 -- | Unify the size of buffers
-unifySize :: [GStmtType a] -> GStmtType a -> GStmtType a -> GStmtType a -> TypeingOut (GStmtType a)
+unifySize :: [GAbsType a] -> GAbsType a -> GAbsType a -> GAbsType a -> TypeingOut (GAbsType a)
 unifySize
   reversedInBufs
   (GaiwanBuf size2 _)
@@ -198,8 +258,11 @@ unifySize
 
       buildOut argSizes endsize = foldZipRev reversedInBufs argSizes (GaiwanBuf (simplifyExp endsize) resType)
 
+      foldZipRev :: [GAbsType a] -> [Exp] -> GAbsType a -> GAbsType a
       foldZipRev [] [] c = c
-      foldZipRev ((GaiwanBuf _ t) : lr) (s : sr) acc = foldZipRev lr sr $ GaiwanArrow (GaiwanBuf (simplifyExp s) t) acc
+      foldZipRev ((GaiwanBuf _ t) : bufferR) (s : sizeR) acc = foldZipRev bufferR sizeR $ GaiwanArrow (AType (GaiwanBuf (simplifyExp s) t)) (AType acc)
+      foldZipRev _ _ _ = error "foldZipRev: aruments not of same length"
+unifySize _ _ _ _ = Left "Cannot unify type on non buffers"
 
 -- | Normalize a size expression and get (varname, a, b) = a*varname + b
 -- TODO: make either
@@ -218,7 +281,7 @@ solveTCnt ::
   (String, Int, Int) ->
   (String, Int, Int) ->
   (String, Int, Int) ->
-  TypeingOut ([Exp], Exp)
+  TypeingOut ([Exp], Exp) -- (Sizes of the inputs, size of the output)
 solveTCnt
   sourceSizes -- input size
   (name2, a2, b2) -- overlapping sizes, these 2 should be unified
@@ -243,23 +306,33 @@ solveTCnt
     where
       n = Var name2 False
       u = abs $ div a3 (gcd a2 a3)
+solveTCnt _ _ _ _ = Left "variable names in last arrowtype are not consistent"
 
-typeWithExpectionAndJustArgs :: Maybe StmtType -> [(String, Maybe StmtType)] -> Exp -> TypeingOut StmtType
+typeWithExpectionAndJustArgs :: Maybe GStmtTypeOrShapeDefault -> MaybeEnvType -> Exp -> TypeingOut GStmtTypeOrShapeDefault
 typeWithExpectionAndJustArgs x args exp = maybe (Left "failed to lift maybe tuple") b (mapM liftMaybeTuple args)
   where
-    b :: [(String, StmtType)] -> TypeingOut StmtType
+    b :: EnvType -> TypeingOut GStmtTypeOrShapeDefault
     b actualArgs = typeWithExpection x actualArgs exp
 
-typeWithExpection :: Maybe StmtType -> [(String, StmtType)] -> Exp -> TypeingOut StmtType
+typeWithExpection :: Maybe GStmtTypeOrShapeDefault -> EnvType -> Exp -> TypeingOut GStmtTypeOrShapeDefault
 typeWithExpection x args exp = either Left (doRightCase x) (typeOfBody args exp)
 
-doRightCase :: Maybe StmtType -> StmtType -> TypeingOut StmtType
+doRightType :: (Eq a, Show a) => Maybe (GAbsType a) -> GAbsType a -> TypeingOut (GAbsType a)
+doRightType a b = do
+  AType out <- doRightCase (AType <$> a) (AType b)
+  return out
+
+doRightCase :: (Eq a, Show a) => Maybe (GStmtTypeOrShape a) -> GStmtTypeOrShape a -> TypeingOut (GStmtTypeOrShape a)
 doRightCase Nothing b = Right b
 doRightCase (Just a) b | a == b = Right b
 doRightCase (Just a) b = Left $ "Expected outtype does not match " ++ show a ++ " but got " ++ show b
 
-typeOfBody :: [(String, StmtType)] -> Exp -> TypeingOut StmtType
-typeOfBody env Let {} = Left "let not yet supported"
+toShapeList :: [GStmtTypeOrShape String] -> TypeingOut [GShape String]
+toShapeList ((AShape a) : r) = (a :) <$> toShapeList r
+toShapeList [] = Right []
+toShapeList _ = Left "Not all shape"
+
+typeOfBody :: EnvType -> Exp -> TypeingOut GStmtTypeOrShapeDefault
 typeOfBody env (Plus a b) = typeOfMathBinop env a b
 typeOfBody env (Minus a b) = typeOfMathBinop env a b
 typeOfBody env (Modulo a b) = typeOfMathBinop env a b
@@ -268,20 +341,21 @@ typeOfBody env (Pow a b) = typeOfMathBinop env a b
 typeOfBody env (Div a b) = typeOfMathBinop env a b
 typeOfBody env (IsEq a b) = typeOfMathBinop env a b
 typeOfBody env (IsGreater a b) = typeOfMathBinop env a b
-typeOfBody env (ArrayGet a b) = typeOfArrayAccess env a b -- FIXME
-typeOfBody env (Int _) = Right GaiwanInt
+typeOfBody env Let {} = Left "let not yet supported"
+typeOfBody env (ArrayGet a b) = AShape <$> shapeOfArrayAccess env a b -- FIXME
+typeOfBody env (Int _) = Right $ AShape GaiwanInt
 typeOfBody env (Select t index) = case typeOfBody env t of
-  Right (GaiwanTuple types) | index >= 0 && index < length types -> Right $ types !! index
-  Right (GaiwanTuple types) -> Left $ "Tuple index (" ++ show index ++ ") out of range"
+  Right (AShape (GaiwanTuple types)) | index >= 0 && index < length types -> Right $ AShape $ types !! index
+  Right (AShape (GaiwanTuple types)) -> Left $ "Tuple index (" ++ show index ++ ") out of range"
   Right t -> Left $ "Can only select from Tuple, not from " ++ show t
   Left a -> Left a
-typeOfBody env (Tuple exps) = GaiwanTuple <$> mapM (typeOfBody env) exps
+typeOfBody env (Tuple exps) = AShape . GaiwanTuple <$> (mapM (typeOfBody env) exps >>= toShapeList)
 typeOfBody env var@Var {} = typeOfVar env var
 typeOfBody env (Negate e) = case typeOfBody env e of
-  Right GaiwanInt -> Right GaiwanInt
+  Right (AShape GaiwanInt) -> Right $ AShape GaiwanInt
   _ -> Left "Cannot negate"
 typeOfBody env (If cond tBranch fBrach) = case mapM (typeOfBody env) [cond, tBranch, fBrach] of
-  Right [tC, tT, fT] | tC == GaiwanInt && tT == fT -> Right tT
+  Right [tC, tT, fT] | tC == AShape GaiwanInt && tT == fT -> Right tT
   Right _ -> Left "Types of if did not match"
   Left x -> Left x
 typeOfBody env PipedExp {} = Left "Cannot type a piped expression in a body"
@@ -289,21 +363,22 @@ typeOfBody env App {} = Left "I don't know this applicaion"
 typeOfBody env GPUBufferGet {} = Left "Cannot use GPUBufferget in body"
 typeOfBody env Loop {} = Left "Cannot use loop in body"
 
-typeOfVar :: [(String, StmtType)] -> Exp -> TypeingOut StmtType
+typeOfVar :: EnvType -> Exp -> TypeingOut (GStmtTypeOrShape String)
 typeOfVar _ (Var name True) = error "not implemented"
 typeOfVar env (Var name False) = maybe (Left $ name ++ " not in env") Right $ lookup name env
+typeOfVar _ _ = Left "trying to typeOfVar on non variable"
 
-typeOfMathBinop :: [(String, StmtType)] -> Exp -> Exp -> TypeingOut (GStmtType a)
+typeOfMathBinop :: EnvType -> Exp -> Exp -> TypeingOut (GStmtTypeOrShape String)
 typeOfMathBinop env a b = case mapM (typeOfBody env) [a, b] of
-  Right [GaiwanInt, GaiwanInt] -> Right GaiwanInt
+  Right [AShape GaiwanInt, AShape GaiwanInt] -> Right $ AShape GaiwanInt
   Left e -> Left e
   Right t -> Left $ "failed to type math binop expected two ints, got " ++ show t
 
-typeOfArrayAccess :: [(String, StmtType)] -> Exp -> Exp -> TypeingOut StmtType
-typeOfArrayAccess env array index = case mapM (typeOfBody env) [array, index] of
-  Right [GaiwanBuf _ ty, GaiwanInt] -> Right ty
-  Right [GaiwanBuf _ ty, _] -> Left "failed to type array access: index is not an int"
-  Right [at, GaiwanInt] -> Left $ "failed to type array access:" ++ show array ++ " was not an array but " ++ show at
+shapeOfArrayAccess :: EnvType -> Exp -> Exp -> TypeingOut StmtShape
+shapeOfArrayAccess env array index = case mapM (typeOfBody env) [array, index] of
+  Right [AType (GaiwanBuf _ ty), AShape GaiwanInt] -> Right ty
+  Right [AType (GaiwanBuf _ ty), _] -> Left "failed to type array access: index is not an int"
+  Right [at, AShape GaiwanInt] -> Left $ "failed to type array access:" ++ show array ++ " was not an array but " ++ show at
   Right _ -> Left "failed to type array access: idk"
   Left e -> Left e
 
@@ -318,17 +393,17 @@ liftMaybeTuple :: (a, Maybe b) -> Maybe (a, b)
 liftMaybeTuple (a, Just x) = Just (a, x)
 liftMaybeTuple (a, Nothing) = Nothing
 
-bufferType1 :: Maybe StmtType -> TypeingOut (Maybe StmtType)
-bufferType1 (Just (GaiwanBuf (Int 1) b)) = Right $ Just b
-bufferType1 (Just GaiwanBuf {}) = Left "non buffer type with length one for out of reducer"
+bufferType1 :: Maybe GStmtTypeOrShapeDefault -> TypeingOut (Maybe StmtShape)
+bufferType1 (Just (AType (GaiwanBuf (Int 1) b))) = Right $ Just b
+bufferType1 (Just (AType GaiwanBuf {})) = Left "non buffer type with length one for out of reducer"
 bufferType1 (Just _) = Left "non buffer type"
 bufferType1 Nothing = Right Nothing
 
-bufferType :: Maybe StmtType -> TypeingOut StmtType
-bufferType (Just (GaiwanBuf _ b)) = Right b
+bufferType :: Maybe GStmtTypeOrShapeDefault -> TypeingOut StmtShape
+bufferType (Just (AType (GaiwanBuf _ b))) = Right b
 bufferType (Just _) = Left "non buffer type"
 bufferType Nothing = Left "no type given"
 
 -- | Get the type of the elements of a buffer argument
-liftMaybeBuffElemType :: (String, Maybe StmtType) -> TypeingOut (String, StmtType)
+liftMaybeBuffElemType :: (String, Maybe GStmtTypeOrShapeDefault) -> TypeingOut (String, StmtShape)
 liftMaybeBuffElemType (a, b) = (a,) <$> bufferType b

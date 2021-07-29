@@ -54,13 +54,16 @@ instance FromJSON GPUAction where
       <|> (AllocBuffer <$> v .: "alloc")
   parseJSON _ = mzero
 
-instance ToJSON GPUBuffer where
-  toJSON (GPUBuffer (GPUBufferName number) size) = toJSON [number, size]
+instance Show a => ToJSON (GShape a) where
+  toJSON a = toJSON $ show a
 
-instance FromJSON GPUBuffer where
+instance ToJSON GPUBuffer where
+  toJSON (GPUBuffer (GPUBufferName number) shape size) = object ["nr" .= number, "shape" .= shape, "size" .= size]
+
+instance FromJSON GPUBuffer where -- TODO: fix
   parseJSON v@(Array _) = do
     [number, size] <- parseJSON v
-    return $ GPUBuffer (GPUBufferName number) size
+    return $ GPUBuffer (GPUBufferName number) GaiwanInt size
   parseJSON _ = mzero
 
 instance ToJSON KernelName where

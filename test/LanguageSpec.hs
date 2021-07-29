@@ -168,6 +168,8 @@ spec = do
         (GaiwanArrow (GaiwanBuf (Plus (Times (Int 2) (Var "n" False)) (Int 1)) GaiwanInt) (GaiwanBuf (Var "n" False) GaiwanInt))
         `shouldSatisfy` isLeft
 
+    -- Handle empty case
+
     it "types a two mapper in an abstraction" $
       toTypedSmt
         ( Abstraction

@@ -5,6 +5,7 @@ import Code.SCode
 import CodeGen.Pipelining
 import Data.List
 import Language.GaiwanDefs
+import Language.GaiwanTypes
 
 mkBinOp a b op = do
   ka <- mkCodeB a
