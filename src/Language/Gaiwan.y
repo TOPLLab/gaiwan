@@ -91,9 +91,9 @@ ExpBase : ExpApp                                            { $1 }
         | avar                                              { $1 }
         | if '(' ExpBase ')'  BracExp else BracExp          { If $3 $5 $7 }
 
-ExpLoop : int ':' var  bracO pipedExp bracC                 { Loop (Int $1) $3 (reverse $5) }
-        | avar ':' var  bracO pipedExp bracC                { Loop $1 $3 (reverse $5) }
-        | '(' ExpBase ')'  ':' var  bracO pipedExp bracC    { Loop $2 $5 (reverse $7) }
+ExpLoop : int ':' var  bracO Exp bracC                 { Loop (Int $1) $3 $5 }
+        | avar ':' var  bracO Exp bracC                { Loop $1 $3 $5 }
+        | '(' ExpBase ')'  ':' var  bracO Exp bracC    { Loop $2 $5 $7 }
 
 Exp   : pipedExp                                            { reverse $1 }
 

@@ -12,6 +12,10 @@ where
 import Code.Definitions
 import Data.Maybe
 
+data Instr =
+   IApp String Bool [Exp]
+  | Loop Exp String [Instr]
+
 data Exp
   = Let String Exp Exp
   | Plus Exp Exp
@@ -28,7 +32,6 @@ data Exp
   | Negate Exp
   | ArrayGet Exp Exp
   | GPUBufferGet GPUBuffer Exp -- Not expressable in syntax
-  | Loop Exp String [Exp]
   | If Exp Exp Exp
   | IsEq Exp Exp
   | IsGreater Exp Exp
@@ -44,19 +47,21 @@ simpleSubstMult mapping to = simplifyExp $ substMult mapping to
 subst :: Exp -> Exp -> Exp -> Exp
 subst from to = substMult [(from, to)]
 
+
+-- Substiute a for b in c (with instructions)
+substI :: Exp -> Exp -> Instr -> Instr
+substI from to = substMultI [(from, to)]
+
+
+substMultI :: [(Exp,Exp)] -> Instr -> Instr
+substMultI kv (Loop exp str instr) = Loop (simplifyExp $ substMult kv exp) str (map (substMultI $ delKey (Var str False) kv) instr)
+substMultI kv (IApp str bool expr) = IApp str bool (map (substMult kv) expr)
+
 -- Substitute
 substMult :: [(Exp, Exp)] -> Exp -> Exp
 substMult [] c = c
 substMult kv c = mapExp (_subst kv) c
   where
-    -- loop: remove var
-    _subst kv c@(Loop cntExp varname exps) =
-      Just $
-        Loop
-          (simplifyExp $ substMult kv cntExp)
-          varname
-          (map (simpleSubstMult $ delKey (Var varname False) kv) exps)
-    -- otherwise, lookup in kv and replace
     _subst kv c = lookup c kv
 
 substGPUBuffers :: [(GPUBuffer, GPUBuffer)] -> Exp -> Exp
@@ -69,7 +74,7 @@ substGPUBuffers kv c = mapExp (_subst kv) c
       return $ GPUBufferGet otherBuf (substGPUBuffers kv exp)
     _subst kv c = Nothing
 
--- | Simplify till fixed point
+-- | Simplify till fixed point :TODO CONTINUE HERE
 simplifyExp :: Exp -> Exp
 simplifyExp e =
   let rec = mapExp _simplifyExp e
