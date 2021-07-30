@@ -70,14 +70,14 @@ typedStmt (TReducer t _ _ _ _) = t
 typedStmt (TAbstraction t _ _ _) = t
 
 data TypedProgram
-  = TypedProg [TypedStmt] Exp
+  = TypedProg [TypedStmt] [Exp]
   deriving (Show, Eq)
 
 checkType :: Program -> TypeingOut TypedProgram
 checkType (Prog s e) = TypedProg <$> (mapM toTypedSmt s) <*> (Right e)
 
 data Program
-  = Prog [Stmt] Exp
+  = Prog [Stmt] [Exp]
   deriving (Show, Eq)
 
 data Stmt
@@ -365,7 +365,6 @@ typeOfBody env (If cond tBranch fBrach) = case mapM (typeOfBody env) [cond, tBra
   Right [tC, tT, fT] | tC == AShape GaiwanInt && tT == fT -> Right tT
   Right _ -> Left "Types of if did not match"
   Left x -> Left x
-typeOfBody env PipedExp {} = Left "Cannot type a piped expression in a body"
 typeOfBody env App {} = Left "I don't know this applicaion"
 typeOfBody env GPUBufferGet {} = Left "Cannot use GPUBufferget in body"
 typeOfBody env Loop {} = Left "Cannot use loop in body"

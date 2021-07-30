@@ -26,7 +26,6 @@ data Exp
   | Select Exp Int
   | Var String Bool
   | Negate Exp
-  | PipedExp [Exp]
   | ArrayGet Exp Exp
   | GPUBufferGet GPUBuffer Exp -- Not expressable in syntax
   | Loop Exp String [Exp]
@@ -116,7 +115,6 @@ mapExp fOrig e = fromMaybe (_mapExp e) (fOrig e)
     _mapExp e@(Pow a b) = Pow (f a) (f b)
     _mapExp e@(Div a b) = Div (f a) (f b)
     _mapExp e@(Negate a) = Negate (f a)
-    _mapExp e@(PipedExp steps) = PipedExp (map f steps)
     _mapExp e@(ArrayGet a b) = ArrayGet (f a) (f b)
     _mapExp e@(Loop cnt name exps) = Loop (f cnt) name (map f exps)
     _mapExp e@(If a b c) = If (f a) (f b) (f c)

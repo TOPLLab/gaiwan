@@ -95,7 +95,7 @@ ExpLoop : int ':' var  bracO pipedExp bracC                 { Loop (Int $1) $3 (
         | avar ':' var  bracO pipedExp bracC                { Loop $1 $3 (reverse $5) }
         | '(' ExpBase ')'  ':' var  bracO pipedExp bracC    { Loop $2 $5 (reverse $7) }
 
-Exp   : pipedExp                                            { cleanPiped (reverse $1) }
+Exp   : pipedExp                                            { reverse $1 }
 
 avar : var                                                  { Var $1 False }
      | builtinvar                                           { Var $1 True }
@@ -133,10 +133,6 @@ stmtList :                                                  { [] }
          | stmtList Stmt                                    { $2 : $1 }
 {
 -- | let var '=' Exp in Exp                                 { Let $2 $4 $6 }
-
--- Simplify a list of piped expression (remove pipe if only one)
-cleanPiped [x] = x
-cleanPiped x   = PipedExp x
 
 mkApp (Var name builtin) = App name builtin
 
