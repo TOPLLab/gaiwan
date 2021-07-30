@@ -114,7 +114,7 @@ type : shape {AShape $1 }
      | shape '[' ExpBase ']'  { AType $ GaiwanBuf $3 $1 }
 
 shape : int { GaiwanInt }
-     | var { TVar $1 }
+     | var { if $1 == "int" then GaiwanInt else TVar $1 }
      | tuple '(' shapelist ')'                              {  GaiwanTuple (reverse $3) }
 
 shapelist : shape {[$1] }

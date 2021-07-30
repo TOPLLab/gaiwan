@@ -1,18 +1,17 @@
 abstraction llllll(round:int ,takePer:int) {
     mapper bitonic_select(i, a:tuple(int,int)) : tuple(int, int) {
       if((i%(2^(round+1))) < (2^round)){
-          if(a[1] < a[2]) {a} else {tuple(a[2],a[1])}
+          if(a[0] < a[1]) {a} else {tuple(a[1],a[0])}
       } else { -- lower half
-          if(a[1] < a[2]) {tuple(a[2],a[1])} else {a}
+          if(a[0] < a[1]) {tuple(a[1],a[0])} else {a}
       }
     }
 }
 
-mapper randomizer(i){
+shaper randomizer(i) : int[n]{
     (i * 593) % 1000
 }
-@generateSeq(1,33554432) |
-    randomizer() |
+    randomizer(@fresh(33554432)) |
     25:round {
         (round+1):step {
             @split(2,2^(round - step)) |

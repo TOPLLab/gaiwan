@@ -6,6 +6,7 @@ import Data.Either
 import Language.Gaiwan
 import Language.GaiwanDefs
 import Language.GaiwanTypes
+import CodeGen.Pipelining
 import Lib (convert)
 import System.Directory
 import System.FilePath
@@ -309,19 +310,30 @@ spec = do
       parseGaiwan d
         `shouldBe` Right
           ( Prog
-              [ Abstraction
-                  Nothing
-                  "llllll"
-                  [("round", Just (AShape (TVar "int"))), ("takePer", Just (AShape (TVar "int")))]
-                  [ Mapper
-                      (Just (AShape (GaiwanTuple [TVar "int", TVar "int"])))
-                      "bitonic_select"
-                      [("i", Nothing), ("a", Just (AShape (GaiwanTuple [TVar "int", TVar "int"])))]
-                      (If (IsGreater (Modulo (Var "i" False) (Pow (Int 2) (Plus (Var "round" False) (Int 1)))) (Pow (Int 2) (Var "round" False))) (If (IsGreater (Select (Var "a" False) 1) (Select (Var "a" False) 2)) (Var "a" False) (Tuple [Select (Var "a" False) 2, Select (Var "a" False) 1])) (If (IsGreater (Select (Var "a" False) 1) (Select (Var "a" False) 2)) (Tuple [Select (Var "a" False) 2, Select (Var "a" False) 1]) (Var "a" False)))
-                  ],
-                Mapper Nothing "randomizer" [("i", Nothing)] (Modulo (Times (Var "i" False) (Int 593)) (Int 1000))
+              [ Abstraction Nothing "llllll" [("round", Just (AShape GaiwanInt)), ("takePer", Just (AShape GaiwanInt))] [Mapper (Just (AShape (GaiwanTuple [GaiwanInt, GaiwanInt]))) "bitonic_select" [("i", Nothing), ("a", Just (AShape (GaiwanTuple [GaiwanInt, GaiwanInt])))] (If (IsGreater (Modulo (Var "i" False) (Pow (Int 2) (Plus (Var "round" False) (Int 1)))) (Pow (Int 2) (Var "round" False))) (If (IsGreater (Select (Var "a" False) 0) (Select (Var "a" False) 1)) (Var "a" False) (Tuple [Select (Var "a" False) 1, Select (Var "a" False) 0])) (If (IsGreater (Select (Var "a" False) 0) (Select (Var "a" False) 1)) (Tuple [Select (Var "a" False) 1, Select (Var "a" False) 0]) (Var "a" False)))],
+                Shaper (Just (AType (GaiwanBuf (Var "n" False) GaiwanInt))) "randomizer" [("i", Nothing)] (Modulo (Times (Var "i" False) (Int 593)) (Int 1000))
               ]
-              [App "generateSeq" True [Int 1, Int 33554432], App "randomizer" False [], Loop (Int 25) "round" [Loop (Plus (Var "round" False) (Int 1)) "step" [App "split" True [Int 2, Pow (Int 2) (Minus (Var "round" False) (Var "step" False))], App "bitonic_select" False [Var "round" False, Plus (Minus (Var "round" False) (Var "step" False)) (Int 1)], App "join" True [Int 2, Pow (Int 2) (Minus (Var "round" False) (Var "step" False))]]]]
+              [App "randomizer" False [App "fresh" True [Int 33554432]], Loop (Int 25) "round" [Loop (Plus (Var "round" False) (Int 1)) "step" [App "split" True [Int 2, Pow (Int 2) (Minus (Var "round" False) (Var "step" False))], App "bitonic_select" False [Var "round" False, Plus (Minus (Var "round" False) (Var "step" False)) (Int 1)], App "join" True [Int 2, Pow (Int 2) (Minus (Var "round" False) (Var "step" False))]]]]
           )
+
+    it "types a sort.t program correcty" $ do
+      d <- readFile "demo/sort.t"
+      let (Right p) = parseGaiwan d
+      checkType p
+        `shouldBe` Right
+          ( TypedProg
+              [ TAbstraction (GaiwanArrow (AType (GaiwanBuf (Var "n" False) (GaiwanTuple [GaiwanInt, GaiwanInt]))) (AType (GaiwanBuf (Var "n" False) (GaiwanTuple [GaiwanInt, GaiwanInt])))) "llllll" ["round", "takePer"] [TMapper (GaiwanArrow (AType (GaiwanBuf (Var "n" False) (GaiwanTuple [GaiwanInt, GaiwanInt]))) (AType (GaiwanBuf (Var "n" False) (GaiwanTuple [GaiwanInt, GaiwanInt])))) "bitonic_select" ["i", "a"] (If (IsGreater (Modulo (Var "i" False) (Pow (Int 2) (Plus (Var "round" False) (Int 1)))) (Pow (Int 2) (Var "round" False))) (If (IsGreater (Select (Var "a" False) 0) (Select (Var "a" False) 1)) (Var "a" False) (Tuple [Select (Var "a" False) 1, Select (Var "a" False) 0])) (If (IsGreater (Select (Var "a" False) 0) (Select (Var "a" False) 1)) (Tuple [Select (Var "a" False) 1, Select (Var "a" False) 0]) (Var "a" False)))],
+                TShaper (GaiwanBuf (Var "n" False) GaiwanInt) "randomizer" ["i"] (Modulo (Times (Var "i" False) (Int 593)) (Int 1000))
+              ]
+              [ App "randomizer" False [App "fresh" True [Int 33554432]],
+                Loop (Int 25) "round" [Loop (Plus (Var "round" False) (Int 1)) "step" [App "split" True [Int 2, Pow (Int 2) (Minus (Var "round" False) (Var "step" False))], App "bitonic_select" False [Var "round" False, Plus (Minus (Var "round" False) (Var "step" False)) (Int 1)], App "join" True [Int 2, Pow (Int 2) (Minus (Var "round" False) (Var "step" False))]]]
+              ]
+          )
+    it "plans a sort.t program correcty" $ do
+      d <- readFile "demo/sort.t"
+      let (Right p) = parseGaiwan d
+      let (Right tp) = checkType p
+      makePlan tp `shouldBe` []
+
 
 -- todo: add test for all demos to see if they are `Right _`

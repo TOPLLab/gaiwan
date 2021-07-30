@@ -4,6 +4,7 @@
 
 module Language.GaiwanTypes
   ( Program (..),
+    TypedProgram (..),
     Stmt (..),
     StmtType (..),
     GAbsType (..),
@@ -16,6 +17,7 @@ module Language.GaiwanTypes
     toTypedSmt,
     --    stmt,
     mergeT,
+    checkType
   )
 where
 
@@ -135,7 +137,8 @@ toTypedSmtEnv env (Shaper outType@(Just (AType outTypeR@(GaiwanBuf _ elemType)))
         name
         (map fst args)
         body
-toTypedSmtEnv env Shaper {} = Left "Incorrect argument given to Shaper"
+toTypedSmtEnv env s@(Shaper _ name ((indexArg, indexType) : otherArgs) _) | maybeGaiwanInt indexType = Left $ "Invalid out type for shaper, expected a buffer for " ++ show s
+toTypedSmtEnv env s@Shaper {} = Left $ "Incorrect argument given to " ++ show s
 toTypedSmtEnv env (Reducer outType name args@[(indexArg, indexType), (accArg, accType), (dataArg, dataType@(Just dataTypeR))] initExp body)
   | maybeGaiwanInt indexType = do
     AShape checkecAccType <- typeWithExpection accType env initExp
@@ -378,7 +381,7 @@ typeOfMathBinop :: EnvType -> Exp -> Exp -> TypeingOut (GStmtTypeOrShape String)
 typeOfMathBinop env a b = case mapM (typeOfBody env) [a, b] of
   Right [AShape GaiwanInt, AShape GaiwanInt] -> Right $ AShape GaiwanInt
   Left e -> Left e
-  Right t -> Left $ "failed to type math binop expected two ints, got " ++ show t
+  Right t -> Left $ "failed to type math binop expected two ints, got " ++ show t ++ " for " ++ show [a,b]
 
 shapeOfArrayAccess :: EnvType -> Exp -> Exp -> TypeingOut StmtShape
 shapeOfArrayAccess env array index = case mapM (typeOfBody env) [array, index] of
