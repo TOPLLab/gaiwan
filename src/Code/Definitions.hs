@@ -48,4 +48,5 @@ data GPUAction
   = CallKernel KernelName [GPUBuffer] [GPUBuffer] Int -- name args threads
   | ReadBuffer GPUBuffer
   | AllocBuffer GPUBuffer
+  | Infoz String
   deriving (Show, Eq)

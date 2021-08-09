@@ -10,14 +10,17 @@ module Language.GaiwanTypes
     GAbsType (..),
     GShape (..),
     TypedStmt (..),
+    TypedInstr (..),
     VarFreeStmtType (..),
     GStmtTypeOrShape (..),
     GStmtTypeOrShapeDefault,
+    StmtShape,
     stmtName,
     toTypedSmt,
     --    stmt,
     mergeT,
-    checkType
+    checkType,
+    checkDefsType
   )
 where
 
@@ -65,21 +68,75 @@ data TypedStmt
   | TAbstraction StmtType String [String] [TypedStmt]
   deriving (Show, Eq)
 
+data TypedInstr
+  = TIApp StmtType TypedStmt [Exp] -- TODO: internals
+  | TLoop StmtType Exp String [TypedInstr]
+  deriving (Show, Eq)
+
+typedInstr :: TypedInstr -> StmtType
+typedInstr (TIApp t _ _) = t
+typedInstr (TLoop t _ _ _) = t
+
 typedStmt :: TypedStmt -> StmtType
 typedStmt (TMapper t _ _ _) = t
 typedStmt (TShaper t _ _ _) = t
 typedStmt (TReducer t _ _ _ _) = t
 typedStmt (TAbstraction t _ _ _) = t
 
-data TypedProgram
-  = TypedProg [TypedStmt] [Exp]
+typedStmtName :: TypedStmt -> String
+typedStmtName (TMapper _ t _ _) = t
+typedStmtName (TShaper _ t _ _) = t
+typedStmtName (TReducer _ t _ _ _) = t
+typedStmtName (TAbstraction _ t _ _) = t
+
+newtype TypedProgram = TypedProg [TypedInstr]
   deriving (Show, Eq)
 
+checkDefsType :: Program -> TypeingOut [TypedStmt]
+checkDefsType (Prog s e) =  mapM toTypedSmt s
+
+
 checkType :: Program -> TypeingOut TypedProgram
-checkType (Prog s e) = TypedProg <$> (mapM toTypedSmt s) <*> (Right e)
+checkType (Prog s e) = do
+  typedStmts <- mapM toTypedSmt s
+  typedInstrs <- mapM (toTypedInstr typedStmts []) e
+  return $ TypedProg typedInstrs
+
+toTypedInstr :: [TypedStmt] -> EnvType -> Instr -> TypeingOut TypedInstr
+toTypedInstr definitions env (IApp "fresh" True [Int cnt]) =
+  Right $
+    TIApp
+      (GaiwanBuf (Int cnt) GaiwanInt)
+      ( TShaper (GaiwanBuf (Int cnt) GaiwanInt) "fresh" ["i"] (Var "i" False)
+      )
+      []
+toTypedInstr definitions env a@(IApp name True args) = Left $ "error: built in funtions not supported yet" ++ show a --TODO
+toTypedInstr definitions env (IApp name False args) = do
+  td <- lookupDef name definitions
+  argTypes <- mapM (typeOfBody env) args
+  apptype <- checkArgs (typedStmt td) argTypes
+  return $ TIApp apptype td args
+toTypedInstr definitions env (Loop count varname childs) = do
+  body <- mapM (toTypedInstr definitions ((varname, AShape GaiwanInt) : env)) childs
+  looptype <- mergeTList (map typedInstr body)
+  -- todo: size change?????
+  -- todo: check if arrow type with same begin and end shape
+  return $ TLoop looptype count varname body
+
+-- | Check if the args are compatible with the statment and return the type of the application
+checkArgs :: StmtType -> [GStmtTypeOrShapeDefault] -> Either String StmtType
+checkArgs (GaiwanArrow from (AType to)) (arg : args) | from == arg = checkArgs to args
+checkArgs fulltype@(GaiwanArrow from (AType to)) (arg : args) = Left $ "Argument of bad type: " ++ show from ++ " but got  " ++ show arg ++ "as an argument to " ++ show fulltype
+checkArgs outType [] = Right outType
+checkArgs outType (_ : _) = Left "Cannot give argument to buffer"
+
+lookupDef :: String -> [TypedStmt] -> TypeingOut TypedStmt
+lookupDef name [] = Left $ "Could not find defintion for" ++ name
+lookupDef name (stmt : _) | name == typedStmtName stmt = Right stmt
+lookupDef name (_ : sr) = lookupDef name sr
 
 data Program
-  = Prog [Stmt] [Exp]
+  = Prog [Stmt] [Instr]
   deriving (Show, Eq)
 
 data Stmt
@@ -110,9 +167,10 @@ toTypedSmtEnv env (Abstraction outType name args parts) = do
   things <- checkSndJustList "all the arguments of an abstraction need to be set" args
   partType <- mapM (toTypedSmtEnv $ things ++ env) parts
   typedParts <- mergeTList $ map typedStmt partType
-  (AType outT) <- doRightCase outType (AType typedParts)
+  outT <- doRightCase outType (AType typedParts)
+  let (AType tttt) = foldr ((\v acc -> AType $ GaiwanArrow v acc) . snd) outT things
   return $
-    TAbstraction outT name (map fst args) partType
+    TAbstraction tttt name (map fst args) partType
 toTypedSmtEnv env (Mapper outType name args@[(indexArg, indexType), (dataVarName, Just (AShape dataVarType))] body)
   | maybeGaiwanInt indexType = do
     AShape retType <- typeWithExpection outType ([(indexArg, AShape GaiwanInt), (dataVarName, AShape dataVarType)] ++ env) body
@@ -368,9 +426,8 @@ typeOfBody env (If cond tBranch fBrach) = case mapM (typeOfBody env) [cond, tBra
   Right [tC, tT, fT] | tC == AShape GaiwanInt && tT == fT -> Right tT
   Right _ -> Left "Types of if did not match"
   Left x -> Left x
-typeOfBody env App {} = Left "I don't know this applicaion"
+typeOfBody env a@App {} = Left $ "I don't know this applicaion" ++ show a
 typeOfBody env GPUBufferGet {} = Left "Cannot use GPUBufferget in body"
-typeOfBody env Loop {} = Left "Cannot use loop in body"
 
 typeOfVar :: EnvType -> Exp -> TypeingOut (GStmtTypeOrShape String)
 typeOfVar _ (Var name True) = error "not implemented"
@@ -381,7 +438,7 @@ typeOfMathBinop :: EnvType -> Exp -> Exp -> TypeingOut (GStmtTypeOrShape String)
 typeOfMathBinop env a b = case mapM (typeOfBody env) [a, b] of
   Right [AShape GaiwanInt, AShape GaiwanInt] -> Right $ AShape GaiwanInt
   Left e -> Left e
-  Right t -> Left $ "failed to type math binop expected two ints, got " ++ show t ++ " for " ++ show [a,b]
+  Right t -> Left $ "failed to type math binop expected two ints, got " ++ show t ++ " for " ++ show [a, b]
 
 shapeOfArrayAccess :: EnvType -> Exp -> Exp -> TypeingOut StmtShape
 shapeOfArrayAccess env array index = case mapM (typeOfBody env) [array, index] of

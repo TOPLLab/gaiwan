@@ -1,5 +1,6 @@
 module Language.GaiwanDefs
   ( Exp (..),
+    Instr (..),
     subst,
     substMult,
     substGPUBuffers,
@@ -12,9 +13,10 @@ where
 import Code.Definitions
 import Data.Maybe
 
-data Instr =
-   IApp String Bool [Exp]
+data Instr
+  = IApp String Bool [Exp]
   | Loop Exp String [Instr]
+  deriving (Show, Eq)
 
 data Exp
   = Let String Exp Exp
@@ -47,15 +49,6 @@ simpleSubstMult mapping to = simplifyExp $ substMult mapping to
 subst :: Exp -> Exp -> Exp -> Exp
 subst from to = substMult [(from, to)]
 
-
--- Substiute a for b in c (with instructions)
-substI :: Exp -> Exp -> Instr -> Instr
-substI from to = substMultI [(from, to)]
-
-
-substMultI :: [(Exp,Exp)] -> Instr -> Instr
-substMultI kv (Loop exp str instr) = Loop (simplifyExp $ substMult kv exp) str (map (substMultI $ delKey (Var str False) kv) instr)
-substMultI kv (IApp str bool expr) = IApp str bool (map (substMult kv) expr)
 
 -- Substitute
 substMult :: [(Exp, Exp)] -> Exp -> Exp
@@ -121,7 +114,6 @@ mapExp fOrig e = fromMaybe (_mapExp e) (fOrig e)
     _mapExp e@(Div a b) = Div (f a) (f b)
     _mapExp e@(Negate a) = Negate (f a)
     _mapExp e@(ArrayGet a b) = ArrayGet (f a) (f b)
-    _mapExp e@(Loop cnt name exps) = Loop (f cnt) name (map f exps)
     _mapExp e@(If a b c) = If (f a) (f b) (f c)
     _mapExp e@(IsEq a b) = IsEq (f a) (f b)
     _mapExp e@(IsGreater a b) = IsGreater (f a) (f b)
