@@ -49,16 +49,10 @@ makePlan :: TypedProgram -> [GPUAction]
 makePlan p = snd $ compile $ execCode $ makePlanning p
 
 makePlanning :: TypedProgram -> TmpCode ()
-makePlanning (TypedProg actions) = do
+makePlanning (TypedProg actions) =
   foldM_ processActions emptyPlan actions
 
 type PlanData = String
-
-
-
-
-
-
 
 -- Substiute a for b in c (with instructions)
 substTI :: Exp -> Exp -> TypedInstr -> TypedInstr
@@ -68,25 +62,50 @@ substTI from to = substMultTI [(from, to)]
 -- Don't map the ts of app
 substMultTI :: [(Exp, Exp)] -> TypedInstr -> TypedInstr
 substMultTI kv (TLoop st cnt varname instrs) = TLoop st (simplifyExp $ substMult kv cnt) varname (map (substMultTI newKv) instrs)
-    where
-        newKv = filter (\(k,_) -> k /= Var varname False) kv
+  where
+    newKv = filter (\(k, _) -> k /= Var varname False) kv
 substMultTI kv (TIApp t ts args) = TIApp t ts (map (simpleSubstMult kv) args)
-
-
-
-
 
 emptyPlan :: PlanData
 emptyPlan = ""
 
+-- TODO check arg length at typechecking
+
 processActions :: PlanData -> TypedInstr -> TmpCode PlanData
-processActions pd (TIApp _ thing args) =
-    do
-        addHostCode $ Infoz $ pd ++ "add call to " ++ "("++intercalate "," (map show args)++")"
-        return "k"
+processActions pd (TIApp zz thing []) =
+  do
+    addHostCode $ Infoz $ pd ++ "add call to ()"
+    processApplication pd thing
+    return "k"
+processActions pd (TIApp zz (TAbstraction t _ argnames body) argvalues) | length argnames == length argvalues =
+  do
+    let kv = zip argnames argvalues
+    let appliedBody = map (substMultStmt kv) body
+    foldM_ processApplication pd appliedBody
+    return "k"
 processActions foldData (TLoop _ (Int cnt) varname steps) =
   foldM
     processActions
     foldData
     $ concatMap (\i -> map (substTI (Var varname False) (Int i)) steps) [0 .. (cnt -1)]
 processActions _ e = error $ "help " ++ show e
+
+substMultStmt :: [(String, Exp)] -> TypedStmt -> TypedStmt
+substMultStmt kv (TShaper t name args exp) = TShaper t name args (substExcept kv args exp)
+substMultStmt kv (TMapper t name args exp) = TMapper t name args (substExcept kv args exp)
+
+substExcept kv args  = simpleSubstMult (kvExcept args kv)
+
+kvExcept args kv = map (\(k, vv) -> (Var k False, vv)) $ filter (\(k, _) -> k `notElem` args) kv
+
+processApplication :: PlanData -> TypedStmt -> TmpCode PlanData
+processApplication pd (TShaper t name args exp) = do
+  addHostCode $ Infoz $ pd ++ "add call to shaper " ++ name ++ "()"
+  return "k"
+processApplication pd (TMapper t name args exp) = do
+  addHostCode $ Infoz $ pd ++ "add call to  " ++ show (simplifyExp exp) ++ "()"
+  return "k"
+processApplication pd (TAbstraction t _ [] body) = do
+  foldM_ processApplication pd body
+  return "k"
+processApplication _ a = error $ show a
