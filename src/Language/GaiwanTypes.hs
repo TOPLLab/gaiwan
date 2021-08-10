@@ -409,7 +409,7 @@ typeOfBody env (Pow a b) = typeOfMathBinop env a b
 typeOfBody env (Div a b) = typeOfMathBinop env a b
 typeOfBody env (IsEq a b) = typeOfMathBinop env a b
 typeOfBody env (IsGreater a b) = typeOfMathBinop env a b
-typeOfBody env Let {} = Left "let not yet supported"
+typeOfBody env (Let varname value exp) = typeOfBody env value >>= (\t -> typeOfBody ((varname, t):env) exp )
 typeOfBody env (ArrayGet a b) = AShape <$> shapeOfArrayAccess env a b -- FIXME
 typeOfBody env (Int _) = Right $ AShape GaiwanInt
 typeOfBody env (Select t index) = case typeOfBody env t of

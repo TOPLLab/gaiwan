@@ -58,7 +58,7 @@ Program : stmtList Exp                                      { Prog (reverse $1) 
 Stmt :: { Stmt }
 Stmt  :  function var '(' varlist ')' maybetype StmtBody    { mkFun $1 $6 $2  (reverse $4) $7 }
       |  reducer  var '(' varlist ')' maybetype '(' ExpBase ')' StmtBody { Language.GaiwanTypes.Reducer $6 $2 (reverse $4)  $8 $10 }
-      |  abstraction var '(' varlist ')' maybetype bracO   pipedStmt bracC  {Language.GaiwanTypes.Abstraction $6 $2 (reverse $4) $8 }
+      |  abstraction var '(' varlist ')' maybetype bracO   pipedStmt bracC  { Language.GaiwanTypes.Abstraction $6 $2 (reverse $4) (reverse $8) }
 
 
 
@@ -84,7 +84,7 @@ ExpBase :: { Exp }
 ExpBase : ExpApp                                            { $1 }
         | ExpBase '%' ExpBase                               { Modulo $1 $3 }
         | tuple '(' explist ')'                             { Tuple (reverse $3) }
-        | ExpBase '[' int ']'                               { Select $1 $3 }
+        | ExpBase '[' '[' int  ']' ']'                      { Select $1 $4 }
         | ExpBase '+' ExpBase                               { Plus $1 $3 }
         | ExpBase '-' ExpBase                               { Minus $1 $3 }
         | ExpBase '*' ExpBase                               { Times $1 $3 }
@@ -98,6 +98,7 @@ ExpBase : ExpApp                                            { $1 }
         | ExpBase '[' ExpBase ']'                           { ArrayGet $1 $3 }
         | avar                                              { $1 }
         | if '(' ExpBase ')'  BracExp else BracExp          { If $3 $5 $7 }
+        | let var '=' ExpBase in ExpBase                                 { Let $2 $4 $6 }
 
 ExpLoop :: {Instr}
 ExpLoop : int ':' var  bracO Exp bracC                 { Loop (Int $1) $3 $5}
@@ -149,7 +150,6 @@ stmtList :: { [Stmt] }
 stmtList :                                                  { [] }
          | stmtList Stmt                                    { $2 : $1 }
 {
--- | let var '=' Exp in Exp                                 { Let $2 $4 $6 }
 
 mkApp (Var name builtin) = App name builtin
 
