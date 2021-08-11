@@ -16,7 +16,7 @@ main = do
       readFile file >>= either print (BS.writeFile fileout) . compile
     ["run", file] ->
       undefined
-      -- BS.readFile file >>= runCompiled >>= print
+    -- BS.readFile file >>= runCompiled >>= print
     ["eval", file] ->
       readFile file >>= run
     ["eval"] ->

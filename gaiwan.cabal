@@ -114,6 +114,7 @@ test-suite gaiwan-test
       Code.SerializeSpec
       CodeSpec
       LanguageSpec
+      UnificationSpec
       RenderSpec
       --TestPrograms
       Paths_gaiwan

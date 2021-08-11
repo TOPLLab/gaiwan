@@ -12,8 +12,7 @@ import Test.Hspec
 import Test.QuickCheck
 import Text.RawString.QQ
 
-
 spec =
   describe "Render" $ do
     it "makes a good model" $ do
-        1 `shouldBe` 1
+      1 `shouldBe` 1

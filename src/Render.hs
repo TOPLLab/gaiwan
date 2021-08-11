@@ -7,5 +7,5 @@ where
 import RenderDefs
 
 -- | Create a JSON representation of a program
---renderJSON = asJSON . render
+-- renderJSON = asJSON . render
 renderJSON = undefined

@@ -46,14 +46,16 @@ compile =
     (Right . uncurry Code.serialize . Code.compile . mkCode) -- todo make either
 
 mkCode (Prog defines main) =
-    undefined
-  -- execCode $ do
-   -- mapM_ registerDef defines
-   --- mkOpenCLKernelCode main
+  undefined
+
+-- execCode $ do
+-- mapM_ registerDef defines
+--- mkOpenCLKernelCode main
 
 convert :: Program -> IO [[Integer]]
 convert program = undefined
-  -- runOpenCL $ mkCode program
+
+-- runOpenCL $ mkCode program
 
 render :: String -> Either String BS.ByteString
 render =

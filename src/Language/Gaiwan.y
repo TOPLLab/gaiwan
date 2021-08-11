@@ -70,7 +70,7 @@ StmtBody :: { Exp }
 StmtBody : bracO ExpBase bracC  {$2 }
 
 ExpKinds :: { Instr }
-ExpKinds : ExpApp                                           { (appToInstr $1) :: Instr}
+ExpKinds : ExpApp                                           { (appToInstr $1) :: Instr }
          | ExpLoop                                          { $1  :: Instr }
 
 ExpApp :: { Exp }
@@ -98,21 +98,21 @@ ExpBase : ExpApp                                            { $1 }
         | ExpBase '[' ExpBase ']'                           { ArrayGet $1 $3 }
         | avar                                              { $1 }
         | if '(' ExpBase ')'  BracExp else BracExp          { If $3 $5 $7 }
-        | let var '=' ExpBase in ExpBase                                 { Let $2 $4 $6 }
+        | let var '=' ExpBase in ExpBase                    { Let $2 $4 $6 }
 
-ExpLoop :: {Instr}
-ExpLoop : int ':' var  bracO Exp bracC                 { Loop (Int $1) $3 $5}
-        | avar ':' var  bracO Exp bracC                { Loop $1 $3 $5 }
-        | '(' ExpBase ')'  ':' var  bracO Exp bracC    { Loop $2 $5 $7 }
+ExpLoop :: {Instr }
+ExpLoop : int ':' var  bracO Exp bracC                      { Loop (Int $1) $3 $5 }
+        | avar ':' var  bracO Exp bracC                     { Loop $1 $3 $5 }
+        | '(' ExpBase ')'  ':' var  bracO Exp bracC         { Loop $2 $5 $7 }
 
-Exp :: {[Instr]}
+Exp :: {[Instr] }
 Exp   : pipedExp                                            { reverse $1 }
 
-avar :: {Exp}
+avar :: {Exp }
 avar : var                                                  { Var $1 False }
      | builtinvar                                           { Var $1 True }
 
-pipedExp :: {[Instr]}
+pipedExp :: {[Instr] }
 pipedExp : ExpKinds                                         { [$1] }
          | pipedExp pipe ExpKinds %prec PIPE                { $3 : $1 }
 
@@ -120,12 +120,12 @@ typedvar :: { (String, Maybe GStmtTypeOrShapeDefault) }
 typedvar : var {($1, Nothing) }
          | var ':' type {($1, Just $3) }
 
-maybetype :: { Maybe GStmtTypeOrShapeDefault}
+maybetype :: { Maybe GStmtTypeOrShapeDefault }
 maybetype : {- empty -} {Nothing }
           | ':' type {Just $2 }
 
 {- No arrow type needed in the parser -}
-type :: { GStmtTypeOrShapeDefault}
+type :: { GStmtTypeOrShapeDefault }
 type : shape {AShape $1 }
      | shape '[' ExpBase ']'  { AType $ GaiwanBuf $3 $1 }
 

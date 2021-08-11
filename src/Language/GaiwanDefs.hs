@@ -6,6 +6,7 @@ module Language.GaiwanDefs
     substGPUBuffers,
     simplifyExp,
     simpleSubstMult,
+    substArrayGet,
     simpleSubst,
   )
 where
@@ -55,7 +56,18 @@ substMult :: [(Exp, Exp)] -> Exp -> Exp
 substMult [] c = c
 substMult kv c = mapExp (_subst kv) c
   where
+    _subst kv (Let varName val rest) = Just $ Let varName (mapExp (_subst kv) val)  (mapExp (_subst (delKey (Var varName False) kv)) rest)
     _subst kv c = lookup c kv
+
+substArrayGet :: String -> (Exp -> Exp) -> Exp -> Exp
+substArrayGet varname trans = simplifyExp . mapExp doSubstArrayGet
+  where
+      doSubstArrayGet :: Exp -> Maybe Exp
+      doSubstArrayGet (ArrayGet (Var name False) index) | name == varname = Just $ trans index
+      doSubstArrayGet (ArrayGet Var {} index) = Nothing
+      doSubstArrayGet (ArrayGet _ index) = error "TODO: non var ArrayGet"
+      doSubstArrayGet _ = Nothing
+
 
 substGPUBuffers :: [(GPUBuffer, GPUBuffer)] -> Exp -> Exp
 substGPUBuffers [] c = c
@@ -68,11 +80,16 @@ substGPUBuffers kv c = mapExp (_subst kv) c
     _subst kv c = Nothing
 
 -- | Simplify till fixed point :TODO CONTINUE HERE
+-- The select-Tuple combo brings down the number of selects in bitonic sort from 4210 to 314
 simplifyExp :: Exp -> Exp
 simplifyExp e =
   let rec = mapExp _simplifyExp e
    in if rec == e then e else simplifyExp rec
   where
+    _simplifyExp e@(Select (Let s exp exp') i) = Just $Let s exp (Select exp' i)
+    _simplifyExp e@(Select (Tuple exps) i) = Just $ exps !! i -- TODO doe we need to check the lenght here? It is already typechecked normally...
+    -- _simplifyExp e@(Select (If exp exp' exp2) i) = _
+    _simplifyExp (Let varname a@(Int _) b) = Just $ subst (Var varname False) a b
     _simplifyExp (Plus (Int a) (Int b)) = Just $ Int $ a + b
     _simplifyExp (Plus (Int 0) b) = Just $ simplifyExp b
     _simplifyExp (Plus a (Int 0)) = Just $ simplifyExp a
@@ -85,6 +102,7 @@ simplifyExp e =
     _simplifyExp (Div (Int a) (Int b)) = Just $ Int $ div a b
     _simplifyExp (Div a (Int 1)) = Just a
     _simplifyExp (Modulo _ (Int 1)) = Just $ Int 0
+    -- _simplifyExp (Modulo (Int 0) _) = Just $ Int 0 -- not always correct !!
     _simplifyExp (Modulo (Int a) (Int b)) = Just $ Int $ mod a b
     _simplifyExp (Pow (Int a) (Int b)) = Just $ Int $ a ^ b
     _simplifyExp e = Nothing
@@ -104,7 +122,7 @@ mapExp fOrig e = fromMaybe (_mapExp e) (fOrig e)
   where
     f = mapExp fOrig
     _mapExp :: Exp -> Exp
-    _mapExp Let {} = error "not supported"
+    _mapExp e@(Let s val exp) = Let s (f val) (f exp)
     _mapExp e@(Plus a b) = Plus (f a) (f b)
     _mapExp e@(Minus a b) = Minus (f a) (f b)
     _mapExp e@(App name builtin exps) = App name builtin (map f exps)
@@ -117,4 +135,8 @@ mapExp fOrig e = fromMaybe (_mapExp e) (fOrig e)
     _mapExp e@(If a b c) = If (f a) (f b) (f c)
     _mapExp e@(IsEq a b) = IsEq (f a) (f b)
     _mapExp e@(IsGreater a b) = IsGreater (f a) (f b)
-    _mapExp x = x -- Int, Var
+    _mapExp e@(Tuple es) = Tuple (map f es)
+    _mapExp e@(Select a b) = Select (f a) b
+    _mapExp e@GPUBufferGet {} = error "do not use " -- TODO: remove
+    _mapExp e@Int {} = e
+    _mapExp e@Var {} = e
