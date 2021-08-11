@@ -1,25 +1,38 @@
-mapper bitonic_select(i, round ,takePer, a, b){
-  if((i%(2^(round+1))) < (2^round)){ -- upper half
-      if(a < b) {a} else {b}
-  } else { -- lower half
-      if(a < b) {b} else {a}
-  };
-  if((i%(2^(round+1))) < (2^round)){
-      if(a < b) {b} else {a}
-  } else {
-      if(a < b) {a} else {b}
-  }
+abstraction bitonic_select(round:int , arrPerBlock:int) {
+    shaper split(i,d:C[2*n]) : tuple(C,C)[n] {
+        let blockid = i/arrPerBlock in
+        let blockstart = blockid * arrPerBlock * 2 in
+        let blockoffset = i % arrPerBlock in
+        let pos = blockstart + blockoffset in
+        tuple(d[pos],d[pos+arrPerBlock])
+    } |
+    mapper bitonic_select_impl(i, a:tuple(int,int)) : tuple(int, int) {
+      if((i%(2^(round+1))) < (2^round)){
+          if(a[[0]] < a[[1]]) {a} else {tuple(a[[1]],a[[0]])}
+      } else { -- lower half
+          if(a[[0]] < a[[1]]) {tuple(a[[1]],a[[0]])} else {a}
+      }
+    } |
+    shaper join(i,d:tuple(B,B)[n]) : B[2*n] {
+        let arrowBlock = i/(2*arrPerBlock) in
+        let arrowBlockStart = arrowBlock * arrPerBlock in
+        let arrowOffset = i % arrPerBlock in
+        let arrow = d[arrowBlock * arrPerBlock + arrowOffset] in
+        if(arrowBlockStart*2+arrPerBlock < i){
+            arrow[[0]]
+        }else{
+            arrow[[1]]
+        }
+    }
 }
 
-mapper randomizer(i){
+shaper randomizer(i) : int[n]{
     (i * 593) % 1000
 }
-@generateSeq(1,33554432) |
+    @fresh(33554432) |
     randomizer() |
     25:round {
         (round+1):step {
-            @split(2,2^(round - step)) |
-            bitonic_select(round,round - step + 1) |
-            @join(2,2^(round - step))
+            bitonic_select(round,2^(round - step))
         }
     }

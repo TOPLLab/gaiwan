@@ -16,9 +16,12 @@ tokens :-
   $white+        ;
   "--".*        ;
   mapper                           { ingest $ \s -> TokenFunction Mapper }
-  shuffler                         { ingest $ \s -> TokenFunction Shuffler }
+  shaper                           { ingest $ \s -> TokenFunction Shaper }
+  reducer                           { ingest $ \s -> TokenReducer }
+  abstraction                           { ingest $ \s -> TokenAbstraction }
   if                               { ingest $ \s -> TokenIf }
   else                             { ingest $ \s -> TokenElse }
+  tuple                             { ingest $ \s -> TokenTuple }
   let                              { ingest $ \s -> TokenLet }
   in                               { ingest $ \s -> TokenIn }
   $digit+                          { ingest $ \s -> TokenInt (read s) }
@@ -32,11 +35,14 @@ tokens :-
 
 ingest f (pos, _, _, s) len = return $ f (take len s) pos
 
-data FunctionType = Mapper | Shuffler deriving (Eq,Ord,Enum,Show)
+data FunctionType = Mapper | Shaper deriving (Eq,Ord,Enum,Show)
+data ReducerType = Reducer  deriving (Eq,Ord,Enum,Show)
 
 -- The token type:
 data Token =
   TokenFunction FunctionType    AlexPosn |
+  TokenAbstraction      AlexPosn |
+  TokenReducer          AlexPosn |
   TokenIf               AlexPosn |
   TokenElse             AlexPosn |
   TokenLet              AlexPosn |
@@ -45,6 +51,7 @@ data Token =
   TokenVar String       AlexPosn |
   TokenBuildinVar String       AlexPosn |
   TokenInt Int          AlexPosn |
+  TokenTuple            AlexPosn |
   TokenEof
   deriving (Eq,Show)
 

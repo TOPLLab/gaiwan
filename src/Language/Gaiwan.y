@@ -4,6 +4,7 @@ import           Data.Char
 import           Data.List
 import           Language.Tokens
 import           Language.GaiwanDefs
+import           Language.GaiwanTypes
 }
 %name gaiwanParse
 %tokentype { Token }
@@ -13,10 +14,13 @@ import           Language.GaiwanDefs
 
 %token
       function                                              { TokenFunction $$ _ }
+      reducer                                               { TokenReducer  _ }
+      abstraction                                           { TokenAbstraction  _ }
       let                                                   { TokenLet      _ }
       in                                                    { TokenIn       _ }
       if                                                    { TokenIf       _ }
       else                                                  { TokenElse       _ }
+      tuple                                                 { TokenTuple       _ }
       int                                                   { TokenInt $$   _ }
       var                                                   { TokenVar $$   _ }
       builtinvar                                            { TokenBuildinVar $$   _ }
@@ -48,25 +52,39 @@ import           Language.GaiwanDefs
 %left NEG
 %%
 
+Program :: { Program }
 Program : stmtList Exp                                      { Prog (reverse $1) $2 }
 
-Stmt  :  function var '(' varlist ')' bracO ExpBaseL bracC  { mkFun $1 $2  (reverse $4) (reverse $7) }
-      |  function var '('         ')' bracO ExpBaseL bracC  { mkFun $1 $2  [] (reverse $6) }
+Stmt :: { Stmt }
+Stmt  :  function var '(' varlist ')' maybetype StmtBody    { mkFun $1 $6 $2  (reverse $4) $7 }
+      |  reducer  var '(' varlist ')' maybetype '(' ExpBase ')' StmtBody { Language.GaiwanTypes.Reducer $6 $2 (reverse $4)  $8 $10 }
+      |  abstraction var '(' varlist ')' maybetype bracO   pipedStmt bracC  { Language.GaiwanTypes.Abstraction $6 $2 (reverse $4) (reverse $8) }
 
-ExpKinds : ExpApp                                           { $1 }
-         | ExpLoop                                          { $1 }
 
+
+pipedStmt :: { [Stmt] }
+pipedStmt : Stmt                                            { [$1] }
+         | pipedStmt pipe Stmt %prec PIPE                   { $3 : $1 }
+
+StmtBody :: { Exp }
+StmtBody : bracO ExpBase bracC  {$2 }
+
+ExpKinds :: { Instr }
+ExpKinds : ExpApp                                           { (appToInstr $1) :: Instr }
+         | ExpLoop                                          { $1  :: Instr }
+
+ExpApp :: { Exp }
 ExpApp : avar '(' explist ')'                               { mkApp $1 (reverse $3) }
        | avar '(' ')'                                       { mkApp $1 [] }
 
-
-ExpBaseL : ExpBase                                          { [$1] }
-         | ExpBaseL semi ExpBase %prec PIPE                 { $3:$1 }
-
+BracExp :: { Exp }
 BracExp : bracO ExpBase bracC                               { $2 }
 
+ExpBase :: { Exp }
 ExpBase : ExpApp                                            { $1 }
         | ExpBase '%' ExpBase                               { Modulo $1 $3 }
+        | tuple '(' explist ')'                             { Tuple (reverse $3) }
+        | ExpBase '[' '[' int  ']' ']'                      { Select $1 $4 }
         | ExpBase '+' ExpBase                               { Plus $1 $3 }
         | ExpBase '-' ExpBase                               { Minus $1 $3 }
         | ExpBase '*' ExpBase                               { Times $1 $3 }
@@ -80,39 +98,66 @@ ExpBase : ExpApp                                            { $1 }
         | ExpBase '[' ExpBase ']'                           { ArrayGet $1 $3 }
         | avar                                              { $1 }
         | if '(' ExpBase ')'  BracExp else BracExp          { If $3 $5 $7 }
+        | let var '=' ExpBase in ExpBase                    { Let $2 $4 $6 }
 
-ExpLoop : int ':' var  bracO pipedExp bracC                 { Loop (Int $1) $3 (reverse $5) }
-        | avar ':' var  bracO pipedExp bracC                { Loop $1 $3 (reverse $5) }
-        | '(' ExpBase ')'  ':' var  bracO pipedExp bracC    { Loop $2 $5 (reverse $7) }
+ExpLoop :: {Instr }
+ExpLoop : int ':' var  bracO Exp bracC                      { Loop (Int $1) $3 $5 }
+        | avar ':' var  bracO Exp bracC                     { Loop $1 $3 $5 }
+        | '(' ExpBase ')'  ':' var  bracO Exp bracC         { Loop $2 $5 $7 }
 
-Exp   : pipedExp                                            { cleanPiped (reverse $1) }
+Exp :: {[Instr] }
+Exp   : pipedExp                                            { reverse $1 }
 
+avar :: {Exp }
 avar : var                                                  { Var $1 False }
      | builtinvar                                           { Var $1 True }
 
+pipedExp :: {[Instr] }
 pipedExp : ExpKinds                                         { [$1] }
          | pipedExp pipe ExpKinds %prec PIPE                { $3 : $1 }
 
-varlist : var                                               { [$1] }
-        | varlist ',' var                                   { $3 : $1 }
+typedvar :: { (String, Maybe GStmtTypeOrShapeDefault) }
+typedvar : var {($1, Nothing) }
+         | var ':' type {($1, Just $3) }
 
+maybetype :: { Maybe GStmtTypeOrShapeDefault }
+maybetype : {- empty -} {Nothing }
+          | ':' type {Just $2 }
+
+{- No arrow type needed in the parser -}
+type :: { GStmtTypeOrShapeDefault }
+type : shape {AShape $1 }
+     | shape '[' ExpBase ']'  { AType $ GaiwanBuf $3 $1 }
+
+shape :: { StmtShape }
+shape : int { GaiwanInt }
+     | var { if $1 == "int" then GaiwanInt else TVar $1 }
+     | tuple '(' shapelist ')'                              {  GaiwanTuple (reverse $3) }
+
+shapelist :: { [StmtShape] }
+shapelist : shape {[$1] }
+         | shapelist ',' shape { $3 : $1 }
+
+varlist :: { [(String, Maybe GStmtTypeOrShapeDefault)] }
+varlist : typedvar                                          { [$1] }
+        | varlist ',' typedvar                              { $3 : $1 }
+
+explist :: { [Exp] }
 explist : ExpBase                                           { [$1] }
         | explist ',' ExpBase                               { $3 : $1 }
 
+stmtList :: { [Stmt] }
 stmtList :                                                  { [] }
          | stmtList Stmt                                    { $2 : $1 }
 {
--- | let var '=' Exp in Exp                                 { Let $2 $4 $6 }
-
--- Simplify a list of piped expression (remove pipe if only one)
-cleanPiped [x] = x
-cleanPiped x   = PipedExp x
 
 mkApp (Var name builtin) = App name builtin
 
-mkFun :: FunctionType -> String -> [String] -> [Exp] -> Stmt
-mkFun Language.Tokens.Mapper   =  Language.GaiwanDefs.Mapper
-mkFun Language.Tokens.Shuffler =  Language.GaiwanDefs.Shuffler
+appToInstr  (App name builtin args)  = IApp name builtin args
+
+mkFun :: FunctionType -> (Maybe GStmtTypeOrShapeDefault) -> String -> [(String, Maybe GStmtTypeOrShapeDefault)] -> Exp -> Stmt
+mkFun Language.Tokens.Mapper   =  Language.GaiwanTypes.Mapper
+mkFun Language.Tokens.Shaper =  Language.GaiwanTypes.Shaper
 
 parseGaiwan :: String -> Either String Program
 parseGaiwan s = runAlex s gaiwanParse
