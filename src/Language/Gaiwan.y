@@ -53,14 +53,19 @@ import           Language.GaiwanTypes
 %%
 
 Program :: { Program }
-Program : stmtList Exp                                      { Prog (reverse $1) $2 }
+Program : AbstrList Exp                                     { Prog $1 $2 }
 
 Stmt :: { Stmt }
 Stmt  :  function var '(' varlist ')' maybetype StmtBody    { mkFun $1 $6 $2  (reverse $4) $7 }
       |  reducer  var '(' varlist ')' maybetype '(' ExpBase ')' StmtBody { Language.GaiwanTypes.Reducer $6 $2 (reverse $4)  $8 $10 }
-      |  abstraction var '(' varlist ')' maybetype bracO   pipedStmt bracC  { Language.GaiwanTypes.Abstraction $6 $2 (reverse $4) (reverse $8) }
 
+Abstr :: { Abstraction }
+Abstr : abstraction var '(' varlist ')' maybetype bracO   pipedStmt bracC  { Language.GaiwanTypes.Abstraction $6 $2 (reverse $4) (reverse $8) }
+      | abstraction var '('         ')' maybetype bracO   pipedStmt bracC  { Language.GaiwanTypes.Abstraction $5 $2 [] (reverse $7) }
 
+AbstrList :: {[Abstraction] }
+AbstrList : {[] }
+          | Abstr AbstrList {$1 : $2 }
 
 pipedStmt :: { [Stmt] }
 pipedStmt : Stmt                                            { [$1] }
@@ -116,18 +121,18 @@ pipedExp :: {[Instr] }
 pipedExp : ExpKinds                                         { [$1] }
          | pipedExp pipe ExpKinds %prec PIPE                { $3 : $1 }
 
-typedvar :: { (String, Maybe GStmtTypeOrShapeDefault) }
+typedvar :: { (String, Maybe GBufOrShapeDefault) }
 typedvar : var {($1, Nothing) }
          | var ':' type {($1, Just $3) }
 
-maybetype :: { Maybe GStmtTypeOrShapeDefault }
+maybetype :: { Maybe GBufOrShapeDefault }
 maybetype : {- empty -} {Nothing }
           | ':' type {Just $2 }
 
 {- No arrow type needed in the parser -}
-type :: { GStmtTypeOrShapeDefault }
+type :: { GBufOrShapeDefault }
 type : shape {AShape $1 }
-     | shape '[' ExpBase ']'  { AType $ GaiwanBuf $3 $1 }
+     | shape '[' ExpBase ']'  { ABuf $ GaiwanBuf $3 $1 }
 
 shape :: { StmtShape }
 shape : int { GaiwanInt }
@@ -138,7 +143,7 @@ shapelist :: { [StmtShape] }
 shapelist : shape {[$1] }
          | shapelist ',' shape { $3 : $1 }
 
-varlist :: { [(String, Maybe GStmtTypeOrShapeDefault)] }
+varlist :: { [(String, Maybe GBufOrShapeDefault)] }
 varlist : typedvar                                          { [$1] }
         | varlist ',' typedvar                              { $3 : $1 }
 
@@ -155,7 +160,7 @@ mkApp (Var name builtin) = App name builtin
 
 appToInstr  (App name builtin args)  = IApp name builtin args
 
-mkFun :: FunctionType -> (Maybe GStmtTypeOrShapeDefault) -> String -> [(String, Maybe GStmtTypeOrShapeDefault)] -> Exp -> Stmt
+mkFun :: FunctionType -> (Maybe GBufOrShapeDefault) -> String -> [(String, Maybe GBufOrShapeDefault)] -> Exp -> Stmt
 mkFun Language.Tokens.Mapper   =  Language.GaiwanTypes.Mapper
 mkFun Language.Tokens.Shaper =  Language.GaiwanTypes.Shaper
 

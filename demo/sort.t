@@ -25,9 +25,10 @@ abstraction bitonic_select(round:int , arrPerBlock:int) {
         }
     }
 }
-
+abstraction randomizer() {
 shaper randomizer(i) : int[n]{
     (i * 593) % 1000
+}
 }
     @fresh(33554432) |
     randomizer() |

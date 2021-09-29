@@ -27,7 +27,7 @@ data Code a = Code
   { deviceCode :: a, -- Kernel definitions
     hostCode :: [GPUAction], -- Plan for the host
     nameCount :: Int, -- For unique kernel names
-    defs :: [TypedStmt], -- Defnitions to be used in the program
+    defs :: [TypedTransform], -- Defnitions to be used in the program
     kernels :: [(([Exp], [GPUBuffer], [GPUBuffer]), KernelName)], -- Put kernels here
     bufferCount :: Int -- For unique buffer names
   }
@@ -57,10 +57,10 @@ freshGPUBufferName = do
   put old {bufferCount = nc + 1}
   return $ GPUBufferName nc
 
-registerDef :: TypedStmt -> SCode b ()
+registerDef :: TypedTransform -> SCode b ()
 registerDef s = modify (\old@Code {defs = d} -> old {defs = s : d})
 
-lookupDef :: String -> SCode b (Maybe TypedStmt)
+lookupDef :: String -> SCode b (Maybe TypedTransform)
 lookupDef name = get <&> (lookup . defs)
   where
     lookup (r : _) | name == stmtName r = Just r

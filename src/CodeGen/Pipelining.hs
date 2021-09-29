@@ -1,7 +1,6 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TupleSections #-}
-{-# OPTIONS_GHC -Wno-incomplete-patterns #-}
 
 module CodeGen.Pipelining (Pipeline, collectBuffers, convertPls, makePlan) where
 
@@ -78,10 +77,6 @@ emptyPlan =
 -- TODO check arg length at typechecking
 
 processActions :: PlanData -> TypedInstr -> TmpCode PlanData
-processActions pd (TIApp zz thing []) =
-  do
-    addHostCode $ Infoz "add call to ()"
-    processApplicationD pd thing
 processActions pd (TIApp zz (TAbstraction t _ argnames body) argvalues) | length argnames == length argvalues =
   do
     let kv = zip argnames argvalues
@@ -94,12 +89,10 @@ processActions foldData (TLoop _ (Int cnt) varname steps) =
     $ concatMap (\i -> map (substTI (Var varname False) (Int i)) steps) [0 .. (cnt -1)]
 processActions _ e = error $ "help " ++ show e
 
-substMultStmt :: [(String, Exp)] -> TypedStmt -> TypedStmt
+substMultStmt :: [(String, Exp)] -> TypedTransform -> TypedTransform
 substMultStmt kv (TShaper t name args exp) = TShaper t name args (substExcept kv args exp)
 substMultStmt kv (TMapper t name args exp) = TMapper t name args (substExcept kv args exp)
 substMultStmt kv (TReducer t name args init exp) = TReducer t name args (substExcept kv args init) (substExcept kv args exp)
-substMultStmt kv (TAbstraction t name args parts) =
-  TAbstraction t name args (map (substMultStmt $ kvExceptBase args kv) parts)
 
 substExcept kv args = simpleSubstMult (kvExcept args kv)
 
@@ -113,7 +106,8 @@ theI = Var "i" True
 
 substByTheI x = simpleSubst (Var x False) theI
 
-processApplication :: PlanData -> TypedStmt -> TmpCode PlanData
+
+processApplication :: PlanData -> TypedTransform -> TmpCode PlanData
 processApplication pd (TShaper t name [iname] exp) = do
   addHostCode $ Infoz $ "add call to shaper " ++ name ++ "(XXX)"
   return $ pd & expVal .~ substByTheI iname exp
@@ -124,9 +118,11 @@ processApplication pd (TShaper t name [iname, dname] exp) = do
 processApplication pd (TMapper t name [iname, dname] exp) = do
   addHostCode $ Infoz $ "add call to  " ++ name ++ "()"
   return $ pd & expVal %~ \old -> substByTheI iname (simpleSubst (Var dname False) old exp)
-processApplication pd (TAbstraction t _ [] body) =
-  foldM processApplicationD pd body
 processApplication _ a = error $ show a
+
+
+--processApplication pd (TAbstraction t _ [] body) =
+--  foldM processApplicationD pd body
 
 
 processApplicationD a b = do

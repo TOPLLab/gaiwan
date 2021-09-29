@@ -36,11 +36,11 @@ library
       Code.Serialize
       -- CodeGen.CLike
       -- CodeGen.OpenCL
+      Language.GaiwanTypes
       CodeGen.Pipelining
       --CodeGen.Render
       Language.Gaiwan
       Language.GaiwanDefs
-      Language.GaiwanTypes
       Language.Tokens
       Lib
       OpenCL
