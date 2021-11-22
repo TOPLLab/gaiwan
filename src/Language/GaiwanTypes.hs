@@ -121,8 +121,8 @@ checkType (Prog s e) = do
 toTypedInstr :: [TypedAbstraction] -> EnvType -> Instr -> TypeingOut TypedInstr
 toTypedInstr definitions env (IApp "fresh" True [Int cnt]) =
   -- special shaper
-  let lol = GTransformType [] [GaiwanBuf (Int cnt) GaiwanInt]
-   in Right $ TIApp lol (TAbstraction (GaiwanArrow [] lol) "fresh" [] [TShaper lol "fresh" ["i"] (Var "i" False)]) []
+  let outType = GTransformType [] [GaiwanBuf (Int cnt) GaiwanInt]
+   in Right $ TIApp outType (TAbstraction (GaiwanArrow [] outType) "fresh" [] [TShaper outType "fresh" ["i"] (Var "i" False)]) []
 toTypedInstr definitions env a@(IApp name True args) = Left $ "error: built in funtions not supported yet" ++ show a --TODO
 toTypedInstr definitions env (IApp name False args) = do
   abstraction <- lookupAbst name definitions

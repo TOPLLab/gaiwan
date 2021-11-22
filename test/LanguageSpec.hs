@@ -265,45 +265,21 @@ spec = do
       checkType expectedProg
         `shouldBe` Right expectedTyped
 
---     let expectedTypedShort =
---           ( TypedProg
---               [ TIApp
---                   (GTransformType [] [GaiwanBuf (Int 33554432) GaiwanInt])
---                   ( TAbstraction
---                       (GaiwanArrow [] (GTransformType [] [GaiwanBuf (Int 33554432) GaiwanInt]))
---                       "gen"
---                       []
---                       [ TShaper (GTransformType [] [GaiwanBuf (Int 33554432) GaiwanInt]) "fresh" ["i"] (Var "i" False)
---                       ]
---                   )
---                   [],
---                 TLoop
---                   (GTransformType [GaiwanBuf (Times (Int 2) (Var "n" False)) GaiwanInt] [GaiwanBuf (Times (Int 2) (Var "n" False)) GaiwanInt])
---                   (Int 2)
---                   "round"
---                   [ TLoop
---                       (GTransformType [GaiwanBuf (Times (Int 2) (Var "n" False)) GaiwanInt] [GaiwanBuf (Times (Int 2) (Var "n" False)) GaiwanInt])
---                       (Plus (Var "round" False) (Int 1))
---                       "step"
---                       [ TIApp
---                           (GTransformType [GaiwanBuf (Times (Int 2) (Var "n" False)) GaiwanInt] [GaiwanBuf (Times (Int 2) (Var "n" False)) GaiwanInt])
---                           ( TAbstraction
---                               (GaiwanArrow [GaiwanInt] (GTransformType [GaiwanBuf (Times (Int 2) (Var "n" False)) GaiwanInt] [GaiwanBuf (Times (Int 2) (Var "n" False)) GaiwanInt]))
---                               "bitonic_select"
---                               ["round", "arrPerBlock"]
---                               [ TShaper (GTransformType [GaiwanBuf (Times (Int 2) (Var "n" False)) (TVar "C")] [GaiwanBuf (Var "n" False) (GaiwanTuple [TVar "C", TVar "C"])]) "split" ["i", "d"] (Let "blockid" (Div (Var "i" False) (Var "arrPerBlock" False)) (Let "blockstart" (Times (Times (Var "blockid" False) (Var "arrPerBlock" False)) (Int 2)) (Let "blockoffset" (Modulo (Var "i" False) (Var "arrPerBlock" False)) (Let "pos" (Plus (Var "blockstart" False) (Var "blockoffset" False)) (Tuple [ArrayGet (Var "d" False) (Var "pos" False), ArrayGet (Var "d" False) (Plus (Var "pos" False) (Var "arrPerBlock" False))]))))),
---                                 TMapper (GTransformType [GaiwanBuf (Var "n" False) (GaiwanTuple [GaiwanInt, GaiwanInt])] [GaiwanBuf (Var "n" False) (GaiwanTuple [GaiwanInt, GaiwanInt])]) "bitonic_select_impl" ["i", "a"] (If (IsGreater (Modulo (Var "i" False) (Pow (Int 2) (Plus (Var "round" False) (Int 1)))) (Pow (Int 2) (Var "round" False))) (If (IsGreater (Select (Var "a" False) 0) (Select (Var "a" False) 1)) (Var "a" False) (Tuple [Select (Var "a" False) 1, Select (Var "a" False) 0])) (If (IsGreater (Select (Var "a" False) 0) (Select (Var "a" False) 1)) (Tuple [Select (Var "a" False) 1, Select (Var "a" False) 0]) (Var "a" False))),
---                                 TShaper (GTransformType [GaiwanBuf (Var "n" False) (GaiwanTuple [TVar "B", TVar "B"])] [GaiwanBuf (Times (Int 2) (Var "n" False)) (TVar "B")]) "join" ["i", "d"] (Let "arrowBlock" (Div (Var "i" False) (Times (Int 2) (Var "arrPerBlock" False))) (Let "arrowBlockStart" (Times (Var "arrowBlock" False) (Var "arrPerBlock" False)) (Let "arrowOffset" (Modulo (Var "i" False) (Var "arrPerBlock" False)) (Let "arrow" (ArrayGet (Var "d" False) (Plus (Times (Var "arrowBlock" False) (Var "arrPerBlock" False)) (Var "arrowOffset" False))) (If (IsGreater (Plus (Times (Var "arrowBlockStart" False) (Int 2)) (Var "arrPerBlock" False)) (Var "i" False)) (Select (Var "arrow" False) 0) (Select (Var "arrow" False) 1))))))
---                               ]
---                           )
---                           [Var "round" False, Pow (Int 2) (Minus (Var "round" False) (Var "step" False))]
---                       ]
---                   ]
---               ]
---           )
---it "plans a sort.t program correcty" $ do
---  makePlan expectedTypedShort `shouldBe` []
---  let plan = makePlan expectedTypedShort
---  mapM_ print plan
+    let expectedTypedShort =
+          ( TypedProg
+              [ TIApp
+                  ( GTransformType [] [GaiwanBuf (Int 33554432) GaiwanInt]
+                  )
+                  (TAbstraction (GaiwanArrow [] (GTransformType [] [GaiwanBuf (Int 33554432) GaiwanInt])) "fresh" [] [TShaper (GTransformType [] [GaiwanBuf (Int 33554432) GaiwanInt]) "fresh" ["i"] (Var "i" False)])
+                  [],
+                TIApp (GTransformType [] [GaiwanBuf (Var "n" False) GaiwanInt]) (TAbstraction (GaiwanArrow [] (GTransformType [] [GaiwanBuf (Var "n" False) GaiwanInt])) "randomizer" [] [TShaper (GTransformType [] [GaiwanBuf (Var "n" False) GaiwanInt]) "randomizer" ["i"] (Modulo (Times (Var "i" False) (Int 593)) (Int 1000))]) [],
+                TLoop (GTransformType [GaiwanBuf (Times (Int 2) (Var "n" False)) GaiwanInt] [GaiwanBuf (Times (Int 2) (Var "n" False)) GaiwanInt]) (Int 2) "round" [TLoop (GTransformType [GaiwanBuf (Times (Int 2) (Var "n" False)) GaiwanInt] [GaiwanBuf (Times (Int 2) (Var "n" False)) GaiwanInt]) (Plus (Var "round" False) (Int 1)) "step" [TIApp (GTransformType [GaiwanBuf (Times (Int 2) (Var "n" False)) GaiwanInt] [GaiwanBuf (Times (Int 2) (Var "n" False)) GaiwanInt]) (TAbstraction (GaiwanArrow [GaiwanInt, GaiwanInt] (GTransformType [GaiwanBuf (Times (Int 2) (Var "n" False)) GaiwanInt] [GaiwanBuf (Times (Int 2) (Var "n" False)) GaiwanInt])) "bitonic_select" ["round", "arrPerBlock"] [TShaper (GTransformType [GaiwanBuf (Times (Int 2) (Var "n" False)) (TVar "C")] [GaiwanBuf (Var "n" False) (GaiwanTuple [TVar "C", TVar "C"])]) "split" ["i", "d"] (Let "blockid" (Div (Var "i" False) (Var "arrPerBlock" False)) (Let "blockstart" (Times (Times (Var "blockid" False) (Var "arrPerBlock" False)) (Int 2)) (Let "blockoffset" (Modulo (Var "i" False) (Var "arrPerBlock" False)) (Let "pos" (Plus (Var "blockstart" False) (Var "blockoffset" False)) (Tuple [ArrayGet (Var "d" False) (Var "pos" False), ArrayGet (Var "d" False) (Plus (Var "pos" False) (Var "arrPerBlock" False))]))))), TMapper (GTransformType [GaiwanBuf (Var "n" False) (GaiwanTuple [GaiwanInt, GaiwanInt])] [GaiwanBuf (Var "n" False) (GaiwanTuple [GaiwanInt, GaiwanInt])]) "bitonic_select_impl" ["i", "a"] (If (IsGreater (Modulo (Var "i" False) (Pow (Int 2) (Plus (Var "round" False) (Int 1)))) (Pow (Int 2) (Var "round" False))) (If (IsGreater (Select (Var "a" False) 0) (Select (Var "a" False) 1)) (Var "a" False) (Tuple [Select (Var "a" False) 1, Select (Var "a" False) 0])) (If (IsGreater (Select (Var "a" False) 0) (Select (Var "a" False) 1)) (Tuple [Select (Var "a" False) 1, Select (Var "a" False) 0]) (Var "a" False))), TShaper (GTransformType [GaiwanBuf (Var "n" False) (GaiwanTuple [TVar "B", TVar "B"])] [GaiwanBuf (Times (Int 2) (Var "n" False)) (TVar "B")]) "join" ["i", "d"] (Let "arrowBlock" (Div (Var "i" False) (Times (Int 2) (Var "arrPerBlock" False))) (Let "arrowBlockStart" (Times (Var "arrowBlock" False) (Var "arrPerBlock" False)) (Let "arrowOffset" (Modulo (Var "i" False) (Var "arrPerBlock" False)) (Let "arrow" (ArrayGet (Var "d" False) (Plus (Times (Var "arrowBlock" False) (Var "arrPerBlock" False)) (Var "arrowOffset" False))) (If (IsGreater (Plus (Times (Var "arrowBlockStart" False) (Int 2)) (Var "arrPerBlock" False)) (Var "i" False)) (Select (Var "arrow" False) 0) (Select (Var "arrow" False) 1))))))]) [Var "round" False, Pow (Int 2) (Minus (Var "round" False) (Var "step" False))]]]
+              ]
+          )
+
+    it "plans a sort.t program correcty" $ do
+      makePlan expectedTypedShort `shouldBe` []
+      let plan = makePlan expectedTypedShort
+      mapM_ print plan
 
 -- todo: add test for all demos to see if they are `Right _`

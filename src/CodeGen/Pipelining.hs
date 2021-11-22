@@ -109,14 +109,14 @@ substByTheI x = simpleSubst (Var x False) theI
 
 processApplication :: PlanData -> TypedTransform -> TmpCode PlanData
 processApplication pd (TShaper t name [iname] exp) = do
-  addHostCode $ Infoz $ "add call to shaper " ++ name ++ "(XXX)"
+  --addHostCode $ Infoz $ "add call to shaper " ++ name ++ "(XXX)"
   return $ pd & expVal .~ substByTheI iname exp
 processApplication pd (TShaper t name [iname, dname] exp) = do
   -- TODO more than one buffer
-  addHostCode $ Infoz $ "add call to shaper " ++ name ++ "("++intercalate "," [iname,dname]++")"
+  --addHostCode $ Infoz $ "add call to shaper " ++ name ++ "("++intercalate "," [iname,dname]++")"
   return $ pd & expVal %~ \old -> substByTheI iname $ substArrayGet dname (\index -> simpleSubst theI index old) exp
 processApplication pd (TMapper t name [iname, dname] exp) = do
-  addHostCode $ Infoz $ "add call to  " ++ name ++ "()"
+  --addHostCode $ Infoz $ "add call to  " ++ name ++ "()"
   return $ pd & expVal %~ \old -> substByTheI iname (simpleSubst (Var dname False) old exp)
 processApplication _ a = error $ show a
 
