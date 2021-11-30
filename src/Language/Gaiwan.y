@@ -14,6 +14,7 @@ import           Language.GaiwanTypes
 
 %token
       function                                              { TokenFunction $$ _ }
+      return                                                { TokenReturn _ }
       reducer                                               { TokenReducer  _ }
       abstraction                                           { TokenAbstraction  _ }
       let                                                   { TokenLet      _ }
@@ -77,33 +78,14 @@ StmtBody : bracO ExpBase bracC  {$2 }
 ExpKinds :: { Instr }
 ExpKinds : ExpApp                                           { (appToInstr $1) :: Instr }
          | ExpLoop                                          { $1  :: Instr }
+         | let var '=' bracO Exp bracC
+           in bracO Exp bracC                               { (LetB $2 $5 $9) }
+         | return var                                       { (Return $2) }
 
 ExpApp :: { Exp }
 ExpApp : avar '(' explist ')'                               { mkApp $1 (reverse $3) }
        | avar '(' ')'                                       { mkApp $1 [] }
 
-BracExp :: { Exp }
-BracExp : bracO ExpBase bracC                               { $2 }
-
-ExpBase :: { Exp }
-ExpBase : ExpApp                                            { $1 }
-        | ExpBase '%' ExpBase                               { Modulo $1 $3 }
-        | tuple '(' explist ')'                             { Tuple (reverse $3) }
-        | ExpBase '[' '[' int  ']' ']'                      { Select $1 $4 }
-        | ExpBase '+' ExpBase                               { Plus $1 $3 }
-        | ExpBase '-' ExpBase                               { Minus $1 $3 }
-        | ExpBase '*' ExpBase                               { Times $1 $3 }
-        | ExpBase '/' ExpBase                               { Div $1 $3 }
-        | ExpBase '>' ExpBase                               { IsGreater $1 $3 }
-        | ExpBase '<' ExpBase                               { IsGreater $3 $1 }
-        | ExpBase '^' ExpBase                               { Pow $1 $3 }
-        | '(' ExpBase ')'                                   { $2 }
-        | '-' ExpBase %prec NEG                             { Negate $2 }
-        | int                                               { Int $1 }
-        | ExpBase '[' ExpBase ']'                           { ArrayGet $1 $3 }
-        | avar                                              { $1 }
-        | if '(' ExpBase ')'  BracExp else BracExp          { If $3 $5 $7 }
-        | let var '=' ExpBase in ExpBase                    { Let $2 $4 $6 }
 
 ExpLoop :: {Instr }
 ExpLoop : int ':' var  bracO Exp bracC                      { Loop (Int $1) $3 $5 }
@@ -112,6 +94,7 @@ ExpLoop : int ':' var  bracO Exp bracC                      { Loop (Int $1) $3 $
 
 Exp :: {[Instr] }
 Exp   : pipedExp                                            { reverse $1 }
+
 
 avar :: {Exp }
 avar : var                                                  { Var $1 False }
@@ -150,6 +133,29 @@ varlist : typedvar                                          { [$1] }
 explist :: { [Exp] }
 explist : ExpBase                                           { [$1] }
         | explist ',' ExpBase                               { $3 : $1 }
+
+BracExp :: { Exp }
+BracExp : bracO ExpBase bracC                               { $2 }
+
+ExpBase :: { Exp }
+ExpBase : ExpApp                                            { $1 }
+        | ExpBase '%' ExpBase                               { Modulo $1 $3 }
+        | tuple '(' explist ')'                             { Tuple (reverse $3) }
+        | ExpBase '[' '[' int  ']' ']'                      { Select $1 $4 }
+        | ExpBase '+' ExpBase                               { Plus $1 $3 }
+        | ExpBase '-' ExpBase                               { Minus $1 $3 }
+        | ExpBase '*' ExpBase                               { Times $1 $3 }
+        | ExpBase '/' ExpBase                               { Div $1 $3 }
+        | ExpBase '>' ExpBase                               { IsGreater $1 $3 }
+        | ExpBase '<' ExpBase                               { IsGreater $3 $1 }
+        | ExpBase '^' ExpBase                               { Pow $1 $3 }
+        | '(' ExpBase ')'                                   { $2 }
+        | '-' ExpBase %prec NEG                             { Negate $2 }
+        | int                                               { Int $1 }
+        | ExpBase '[' ExpBase ']'                           { ArrayGet $1 $3 }
+        | avar                                              { $1 }
+        | if '(' ExpBase ')'  BracExp else BracExp          { If $3 $5 $7 }
+        | let var '=' ExpBase in ExpBase                    { Let $2 $4 $6 }
 
 stmtList :: { [Stmt] }
 stmtList :                                                  { [] }
