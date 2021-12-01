@@ -235,6 +235,12 @@ spec = do
             ]
         )
         `shouldBe` Right (TAbstraction (GaiwanArrow [GaiwanInt] (GTransformType [GaiwanBuf (Plus (Times (Int 4) (Var "n" False)) (Int 2)) GaiwanInt] [GaiwanBuf (Var "n" False) GaiwanInt])) "nameOFanAbstraction" ["size"] [TShaper (GTransformType [GaiwanBuf (Times (Int 2) (Var "n" False)) (TVar "A")] [GaiwanBuf (Var "n" False) (GaiwanTuple [TVar "A", TVar "A"])]) "nameOFaMapper" ["i", "v"] (Tuple [ArrayGet (Var "v" False) (Times (Int 2) (Var "i" False)), ArrayGet (Var "v" False) (Plus (Int 1) (Times (Int 2) (Var "i" False)))]), TShaper (GTransformType [GaiwanBuf (Plus (Times (Int 2) (Var "n" False)) (Int 1)) (TVar "B")] [GaiwanBuf (Var "n" False) (GaiwanTuple [TVar "B", TVar "B"])]) "nameOFaMapper" ["i", "v"] (Tuple [ArrayGet (Var "v" False) (Times (Int 2) (Var "i" False)), ArrayGet (Var "v" False) (Plus (Int 1) (Times (Int 2) (Var "i" False)))]), TMapper (GTransformType [GaiwanBuf (Var "n" False) (GaiwanTuple [GaiwanTuple [GaiwanInt, GaiwanInt], GaiwanTuple [GaiwanInt, GaiwanInt]])] [GaiwanBuf (Var "n" False) GaiwanInt]) "nameOFaMapper" ["i", "v"] (Plus (Select (Select (Var "v" False) 1) 1) (Select (Select (Var "v" False) 1) 0))])
+
+  describe "Language.Gaiwan simple LetB Return" $ do
+    let prog = Prog [] [LetB "k" [IApp "fresh" True [Int 33554432]] [Return "k"]]
+    it "does not parse garbage" $
+      checkType prog `shouldSatisfy` (\(Left _) -> True)
+
   describe "Language.Gaiwan (parser): check if all demos parse" $ do
     files <- runIO $ listDirectory "demo"
     ffiles <- runIO $ mapM demoNameAndContents files
