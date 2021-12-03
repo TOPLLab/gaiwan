@@ -29,7 +29,7 @@ A shuffler rearanges items in buffers. The output of a shuffler can only contain
 values from the input buffers.
 
 ```
-shuffer(i, A, Alen, B, Blen){
+shuffler(i, A, Alen, B, Blen){
   A[i] ; B[i] ; A[i]
 }
 ```
