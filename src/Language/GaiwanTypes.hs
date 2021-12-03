@@ -98,6 +98,8 @@ data TypedInstr
 typedInstr :: TypedInstr -> TransformType
 typedInstr (TIApp t _ _) = t
 typedInstr (TLoop t _ _ _) = t
+typedInstr (TRetrun t _) = t
+typedInstr (TLetB t _ _) = t
 
 typedStmt :: TypedTransform -> TransformType
 typedStmt (TMapper t _ _ _) = t
