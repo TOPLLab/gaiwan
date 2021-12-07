@@ -30,6 +30,7 @@ where
 import Code.Definitions
 import Data.Bifunctor
 import Data.Foldable
+import qualified Data.Map as M
 import Data.Maybe
 import Language.GaiwanDefs
 
@@ -49,7 +50,7 @@ type GaiwanBufDefault = GaiwanBuf String
 data GTransformType a = GTransformType (Constraints a) [GaiwanBuf a] [GaiwanBuf a]
   deriving (Show, Eq)
 
-type Constraints a = [(String, GaiwanBuf a)]
+type Constraints a = M.Map String (GaiwanBuf a)
 
 data GBufOrShape a = ABuf (GaiwanBuf a) | AShape (GShape a) deriving (Show, Eq)
 
@@ -92,14 +93,14 @@ data TypedInstr
   = TIApp TransformType TypedAbstraction [Exp] -- TODO: internals + let + cat
   | TLoop TransformType Exp String [TypedInstr]
   | TRetrun TransformType [String]
-  | TLetB TransformType [TypedInstr] [TypedInstr]
+  | TLetB TransformType String [TypedInstr] [TypedInstr]
   deriving (Show, Eq)
 
 typedInstr :: TypedInstr -> TransformType
 typedInstr (TIApp t _ _) = t
 typedInstr (TLoop t _ _ _) = t
 typedInstr (TRetrun t _) = t
-typedInstr (TLetB t _ _) = t
+typedInstr (TLetB t _ _ _) = t
 
 typedStmt :: TypedTransform -> TransformType
 typedStmt (TMapper t _ _ _) = t
@@ -126,14 +127,17 @@ checkType (Prog s e) = do
 toTypedInstr :: [TypedAbstraction] -> EnvType -> Instr -> TypeingOut TypedInstr
 toTypedInstr definitions env (Return name) =
   let outType = GaiwanBuf (Var "freshname" False) (TVar "freshname") -- TODO
-   in Right $ TRetrun (GTransformType [(name, outType)] [] [outType]) [name]
+   in Right $ TRetrun (GTransformType (M.singleton name outType) [] [outType]) [name]
 toTypedInstr definitions env (LetB name wl1 wl2) = do
-  twl1 <- mapM (toTypedInstr definitions env) wl1
-  twl2 <- mapM (toTypedInstr definitions env) wl2
-  undefined -- TODO japply
+  twl1b <- mapM (toTypedInstr definitions env) wl1
+  twl1 <- mergeTList $ map typedInstr twl1b
+  twl2b <- mapM (toTypedInstr definitions env) wl2
+  twl2 <- mergeTList $ map typedInstr twl2b
+  tout <- japply name twl1 twl2
+  Right (TLetB tout name twl1b twl2b)
 toTypedInstr definitions env (IApp "fresh" True [Int cnt]) =
   -- special shaper
-  let outType = GTransformType [] [] [GaiwanBuf (Int cnt) GaiwanInt]
+  let outType = GTransformType M.empty [] [GaiwanBuf (Int cnt) GaiwanInt]
    in Right $ TIApp outType (TAbstraction (GaiwanArrow [] outType) "fresh" [] [TShaper outType "fresh" ["i"] (Var "i" False)]) []
 toTypedInstr definitions env a@(IApp name True args) = Left $ "error: built in funtions not supported yet" ++ show a --TODO
 toTypedInstr definitions env (IApp name False args) = do
@@ -149,10 +153,21 @@ toTypedInstr definitions env (Loop count varname childs) = do
   return $ TLoop looptype count varname body
 
 -- | Check if the args are compatible with the statment and return the type of the application
+japply :: String -> TransformType -> TransformType -> TypeingOut TransformType
+japply name (GTransformType c1 [] [t1]) (GTransformType c2 [] t2) = do
+  (newc, newt) <- constraintUnion t2 (M.insert name t1 c1) c2
+  Right (GTransformType (M.delete name newc) [] newt)
+japply _ _ _ = Left "Cannot japply with funciton as first argument"
+
+constraintUnion :: [GaiwanBuf a] -> Constraints a -> Constraints a -> TypeingOut (Constraints a, [GaiwanBuf a])
+constraintUnion outType c1 c2 = do
+  let overlap = M.keys $ M.intersectionWith (,) c1 c2
+  Left "..."
+
 abstrType :: TypedAbstraction -> AbstType
 abstrType (TAbstraction t _ _ _) = t
 
-checkArgs :: AbstType -> [GBufOrShapeDefault] -> Either String TransformType
+checkArgs :: AbstType -> [GBufOrShapeDefault] -> TypeingOut TransformType
 checkArgs (GaiwanArrow from to) args | map AShape from == args = Right to
 checkArgs fulltype@(GaiwanArrow from to) args = Left $ "Argument of bad type: " ++ show from ++ " but got  " ++ show args ++ "as an argument to " ++ show fulltype
 
@@ -213,7 +228,7 @@ toTypedSmtEnv env (Mapper outType name args@[(indexArg, indexType), (dataVarName
     return $
       TMapper
         ( GTransformType
-            []
+            M.empty
             [GaiwanBuf (Var "n" False) dataVarType]
             [GaiwanBuf (Var "n" False) retType]
         )
@@ -228,7 +243,7 @@ toTypedSmtEnv env (Shaper outType@(Just (ABuf outTypeR@(GaiwanBuf _ elemType))) 
     typeWithExpection (Just $ AShape elemType) (((indexArg, AShape GaiwanInt) : extraArgsBuf) ++ env) body
     return $
       TShaper
-        (GTransformType [] (map snd extraArgs) [outTypeR])
+        (GTransformType M.empty (map snd extraArgs) [outTypeR])
         name
         (map fst args)
         body
@@ -247,7 +262,7 @@ toTypedSmtEnv env (Reducer outType name args@[(indexArg, indexType), (accArg, ac
         body
     return $
       TReducer
-        (GTransformType [] [GaiwanBuf (Var "n" False) checkecAccType] [GaiwanBuf (Int 1) checkedOutType])
+        (GTransformType M.empty [GaiwanBuf (Var "n" False) checkecAccType] [GaiwanBuf (Int 1) checkedOutType])
         name
         (map fst args)
         initExp
@@ -276,92 +291,101 @@ mergeT t1 t2 = do
     lstT (GTransformType _ from to) = Right to
     fstT (GTransformType _ from to) = Right from
 
-    joinT :: (Eq a, Show a) => GTransformType a -> GTransformType a -> TypeingOut (GTransformType a)
-    joinT (GTransformType c1 from1 to1) (GTransformType c2 from2 to2) | null c2 && length to1 == length from2 = joinT1 c1 from1 to1 from2 to2
-    joinT GTransformType {} GTransformType {} = Left "incompatible number of args"
+joinT :: (Eq a, Show a) => GTransformType a -> GTransformType a -> TypeingOut (GTransformType a)
+joinT (GTransformType c1 from1 to1) (GTransformType c2 from2 to2) | null c2 && length to1 == length from2 = joinT1 RecordType {toAdjustC = c1, toAdjustB = from1, toMatch = to1} RecordType {toAdjustC = c2, toAdjustB = to2, toMatch = from2}
+joinT GTransformType {} GTransformType {} = Left "incompatible number of args"
 
-    joinT1 :: Constraints a -> [GaiwanBuf a] -> [GaiwanBuf a] -> [GaiwanBuf a] -> [GaiwanBuf a] -> TypeingOut (GTransformType a)
-    joinT1 c1 from1 to1 from2 to2 = do
-      -- TODO: make nicer
-      arg1 <- mapM normBufSize from1
-      arg2 <- mapM normBufSize to1
-      arg3 <- mapM normBufSize from2
-      arg4 <- mapM normBufSize to2
-      cTypes <- mapM (normBufSize . snd) c1
-      (cTypesOut, fFrom, fTo) <- joinT2 cTypes arg1 arg2 arg3 arg4
-      let c2 = zip (map fst c1) (zipWith reJoin (map snd c1) cTypesOut) -- TODO check
-      return (GTransformType c2 (zipWith reJoin from1 fFrom) (zipWith reJoin to2 fTo))
-      where
-        reJoin :: GaiwanBuf a -> (String, Int, Int) -> GaiwanBuf a
-        reJoin (GaiwanBuf exp gs) newSize = GaiwanBuf (denorm newSize) gs
+data RecordType a = RecordType
+  { toAdjustB :: [GaiwanBuf a],
+    toAdjustC :: Constraints a,
+    toMatch :: [GaiwanBuf a]
+  }
 
-    joinT2 :: [(String, Int, Int)] -> [(String, Int, Int)] -> [(String, Int, Int)] -> [(String, Int, Int)] -> [(String, Int, Int)] -> TypeingOut ([(String, Int, Int)], [(String, Int, Int)], [(String, Int, Int)])
-    joinT2 c f [] [] t = Right (c, f, t)
-    joinT2 c f (l1 : lr) (r1 : rr) t = do
-      (l, r) <- solveTCnt l1 r1
-      fN <- mapM l f
-      tN <- mapM r t
-      lN <- mapM l lr
-      rN <- mapM r rr
-      cN <- mapM l c -- check when does not apply TODO should just work instread of fail
-      joinT2 cN fN lN rN tN
-    joinT2 _ f _ _ t = Left "incompatible number of buffers"
+joinT1 :: RecordType a -> RecordType a -> TypeingOut (GTransformType a)
+joinT1
+  RecordType {toAdjustC = mc1, toAdjustB = from1, toMatch = to1}
+  RecordType {toAdjustC = mc2, toAdjustB = to2, toMatch = from2} = do
+    -- TODO: make nicer
+    arg1 <- mapM normBufSize from1
+    arg2 <- mapM normBufSize to1
+    arg3 <- mapM normBufSize from2
+    arg4 <- mapM normBufSize to2
+    let c1 = M.toAscList mc1
+    cTypes <- mapM (normBufSize . snd) c1
+    (cTypesOut, fFrom, fTo) <- joinT2 cTypes arg1 arg2 arg3 arg4
+    let c2 = zip (map fst c1) (zipWith reJoin (map snd c1) cTypesOut) -- TODO check
+    return (GTransformType (M.fromAscList c2) (zipWith reJoin from1 fFrom) (zipWith reJoin to2 fTo))
+    where
+      reJoin :: GaiwanBuf a -> (String, Int, Int) -> GaiwanBuf a
+      reJoin (GaiwanBuf exp gs) newSize = GaiwanBuf (denorm newSize) gs
 
-    normBufSize :: GaiwanBuf a -> TypeingOut (String, Int, Int)
-    normBufSize (GaiwanBuf size _) = norm size
+joinT2 :: [(String, Int, Int)] -> [(String, Int, Int)] -> [(String, Int, Int)] -> [(String, Int, Int)] -> [(String, Int, Int)] -> TypeingOut ([(String, Int, Int)], [(String, Int, Int)], [(String, Int, Int)])
+joinT2 c f [] [] t = Right (c, f, t)
+joinT2 c f (l1 : lr) (r1 : rr) t = do
+  (l, r) <- solveTCnt l1 r1
+  fN <- mapM l f
+  tN <- mapM r t
+  lN <- mapM l lr
+  rN <- mapM r rr
+  cN <- mapM l c -- check when does not apply TODO should just work instread of fail
+  joinT2 cN fN lN rN tN
+joinT2 _ f _ _ t = Left "incompatible number of buffers"
 
-    -- Constrainst for the types (exlucting type)
-    constraints :: [TaggedBuff] -> [TaggedBuff] -> TypeingOut [(Tag, GShape Tag)]
-    constraints a b = listConstraints (map bufType a) (map bufType b)
+normBufSize :: GaiwanBuf a -> TypeingOut (String, Int, Int)
+normBufSize (GaiwanBuf size _) = norm size
 
-    constraintss :: GShape Tag -> GShape Tag -> TypeingOut [(Tag, GShape Tag)]
-    constraintss (TVar a) (TVar b) | a == b = Right []
-    constraintss (TVar a) b = Right [(a, b)]
-    constraintss a (TVar b) = Right [(b, a)]
-    constraintss GaiwanInt GaiwanInt = Right []
-    constraintss (GaiwanTuple a) (GaiwanTuple b) = listConstraints a b
-    constraintss _ _ = Left "Could not match arguments"
+-- Constrainst for the types (exlucting type)
+constraints :: [TaggedBuff] -> [TaggedBuff] -> TypeingOut [(Tag, GShape Tag)]
+constraints a b = listConstraints (map bufType a) (map bufType b)
 
-    listConstraints :: [GShape Tag] -> [GShape Tag] -> TypeingOut [(Tag, GShape Tag)]
-    listConstraints (a : ar) (b : bs) = do
-      prev <- constraintss a b
-      r <- listConstraints (map (applyms prev) ar) (map (applyms prev) bs)
-      return $ map (second (applyms r)) prev ++ r
-    listConstraints [] [] = return []
-    listConstraints _ _ = fail "unequal length in listConstraints"
+constraintss :: GShape Tag -> GShape Tag -> TypeingOut [(Tag, GShape Tag)]
+constraintss (TVar a) (TVar b) | a == b = Right []
+constraintss (TVar a) b = Right [(a, b)]
+constraintss a (TVar b) = Right [(b, a)]
+constraintss GaiwanInt GaiwanInt = Right []
+constraintss (GaiwanTuple a) (GaiwanTuple b) = listConstraints a b
+constraintss _ _ = Left "Could not match arguments"
 
-    applym :: [(Tag, GShape Tag)] -> GTransformType Tag -> GTransformType Tag
-    applym m (GTransformType c gbs gbs') = GTransformType (map (second (applyb m)) c) (map (applyb m) gbs) (map (applyb m) gbs')
+listConstraints :: [GShape Tag] -> [GShape Tag] -> TypeingOut [(Tag, GShape Tag)]
+listConstraints (a : ar) (b : bs) = do
+  prev <- constraintss a b
+  r <- listConstraints (map (applyms prev) ar) (map (applyms prev) bs)
+  return $ map (second (applyms r)) prev ++ r
+listConstraints [] [] = return []
+listConstraints _ _ = fail "unequal length in listConstraints"
 
-    applyb :: [(Tag, GShape Tag)] -> GaiwanBuf Tag -> GaiwanBuf Tag
-    applyb m (GaiwanBuf exp gs) = GaiwanBuf exp (applyms m gs)
+applym :: [(Tag, GShape Tag)] -> GTransformType Tag -> GTransformType Tag
+applym m (GTransformType c gbs gbs') = GTransformType (M.map (applyb m) c) (map (applyb m) gbs) (map (applyb m) gbs')
 
-    applyms :: [(Tag, GShape Tag)] -> GShape Tag -> GShape Tag
-    applyms m = applys $ \name -> fromMaybe (TVar name) (lookup name m)
+applyb :: [(Tag, GShape Tag)] -> GaiwanBuf Tag -> GaiwanBuf Tag
+applyb m (GaiwanBuf exp gs) = GaiwanBuf exp (applyms m gs)
 
-    rename :: Int -> TransformType -> GTransformType Tag
-    rename v (GTransformType c gbs gbs') = GTransformType (map (second $ renameb v) c) (map (renameb v) gbs) (map (renameb v) gbs')
+applyms :: [(Tag, GShape Tag)] -> GShape Tag -> GShape Tag
+applyms m = applys $ \name -> fromMaybe (TVar name) (lookup name m)
 
-    renamec :: Int -> Constraints String -> Constraints Tag
-    renamec v = map (second (renameb v))
+rename :: Int -> TransformType -> GTransformType Tag
+rename v (GTransformType c gbs gbs') = GTransformType (M.map (renameb v) c) (map (renameb v) gbs) (map (renameb v) gbs')
 
-    renameb :: Int -> GaiwanBufDefault -> TaggedBuff
-    renameb v = apply $ \name -> TVar (v, name)
+renamec :: Int -> Constraints String -> Constraints Tag
+renamec v = M.map (renameb v)
 
-    apply :: (a -> GShape b) -> GaiwanBuf a -> GaiwanBuf b
-    apply f (GaiwanBuf exp gs) = GaiwanBuf exp (applys f gs)
+renameb :: Int -> GaiwanBufDefault -> TaggedBuff
+renameb v = apply $ \name -> TVar (v, name)
 
-    -- apply for shapes only
-    applys :: (a -> GShape b) -> GShape a -> GShape b
-    applys f (TVar a) = f a
-    applys f GaiwanInt = GaiwanInt
-    applys f (GaiwanTuple a) = GaiwanTuple $ map (applys f) a
+apply :: (a -> GShape b) -> GaiwanBuf a -> GaiwanBuf b
+apply f (GaiwanBuf exp gs) = GaiwanBuf exp (applys f gs)
 
-    unrename :: GTransformType Tag -> TransformType
-    unrename (GTransformType c gbs gb) = GTransformType (map (second unrenameb) c) (map unrenameb gbs) (map unrenameb gb)
+-- apply for shapes only
+applys :: (a -> GShape b) -> GShape a -> GShape b
+applys f (TVar a) = f a
+applys f GaiwanInt = GaiwanInt
+applys f (GaiwanTuple a) = GaiwanTuple $ map (applys f) a
 
-    unrenameb :: TaggedBuff -> GaiwanBufDefault
-    unrenameb = apply $ \name -> TVar $ show name
+unrename :: GTransformType Tag -> TransformType
+unrename (GTransformType c gbs gb) = GTransformType (M.map unrenameb c) (map unrenameb gbs) (map unrenameb gb)
+
+unrenameb :: TaggedBuff -> GaiwanBufDefault
+unrenameb = apply $ \name -> TVar $ show name
 
 -- | Unify the size of buffers
 bufType :: TaggedBuff -> GShape Tag
