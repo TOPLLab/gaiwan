@@ -52,24 +52,22 @@ simpleSubstMult mapping to = simplifyExp $ substMult mapping to
 subst :: Exp -> Exp -> Exp -> Exp
 subst from to = substMult [(from, to)]
 
-
 -- Substitute
 substMult :: [(Exp, Exp)] -> Exp -> Exp
 substMult [] c = c
 substMult kv c = mapExp (_subst kv) c
   where
-    _subst kv (Let varName val rest) = Just $ Let varName (mapExp (_subst kv) val)  (mapExp (_subst (delKey (Var varName False) kv)) rest)
+    _subst kv (Let varName val rest) = Just $ Let varName (mapExp (_subst kv) val) (mapExp (_subst (delKey (Var varName False) kv)) rest)
     _subst kv c = lookup c kv
 
 substArrayGet :: String -> (Exp -> Exp) -> Exp -> Exp
 substArrayGet varname trans = simplifyExp . mapExp doSubstArrayGet
   where
-      doSubstArrayGet :: Exp -> Maybe Exp
-      doSubstArrayGet (ArrayGet (Var name False) index) | name == varname = Just $ trans index
-      doSubstArrayGet (ArrayGet Var {} index) = Nothing
-      doSubstArrayGet (ArrayGet _ index) = error "TODO: non var ArrayGet"
-      doSubstArrayGet _ = Nothing
-
+    doSubstArrayGet :: Exp -> Maybe Exp
+    doSubstArrayGet (ArrayGet (Var name False) index) | name == varname = Just $ trans index
+    doSubstArrayGet (ArrayGet Var {} index) = Nothing
+    doSubstArrayGet (ArrayGet _ index) = error "TODO: non var ArrayGet"
+    doSubstArrayGet _ = Nothing
 
 substGPUBuffers :: [(GPUBuffer, GPUBuffer)] -> Exp -> Exp
 substGPUBuffers [] c = c
@@ -88,7 +86,7 @@ simplifyExp e =
   let rec = mapExp _simplifyExp e
    in if rec == e then e else simplifyExp rec
   where
-    _simplifyExp e@(Select (Let s exp exp') i) = Just $Let s exp (Select exp' i)
+    _simplifyExp e@(Select (Let s exp exp') i) = Just $ Let s exp (Select exp' i)
     _simplifyExp e@(Select (Tuple exps) i) = Just $ exps !! i -- TODO doe we need to check the lenght here? It is already typechecked normally...
     -- _simplifyExp e@(Select (If exp exp' exp2) i) = _
     _simplifyExp (Let varname a@(Int _) b) = Just $ subst (Var varname False) a b

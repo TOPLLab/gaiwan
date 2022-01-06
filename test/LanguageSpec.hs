@@ -3,6 +3,7 @@
 module LanguageSpec (spec) where
 
 import CodeGen.Pipelining
+import Control.Monad.State.Lazy
 import Data.Either
 import qualified Data.Map as M
 import Language.Gaiwan
@@ -22,29 +23,29 @@ n = Var "n" False
 
 v = Var "v" False
 
-mergeTStr :: GTransformType String -> GTransformType String -> TypeingOut (GTransformType String)
-mergeTStr = mergeT
+mergeTStr :: GTransformType String -> GTransformType String -> Either String (GTransformType String)
+mergeTStr a b = evalStateT (mergeT a b) 0
 
 spec = do
   describe "Language.GaiwanDefs (type)" $ do
     it "notice missing var" $
-      toTypedSmt (Abstraction Nothing "fsdf" [] [(Mapper Nothing "nameOFaMapper" [("i", Nothing), ("v", Just (AShape GaiwanInt))] n)]) `shouldSatisfy` isLeft
+      toTypedSmtSimple (Abstraction Nothing "fsdf" [] [(Mapper Nothing "nameOFaMapper" [("i", Nothing), ("v", Just (AShape GaiwanInt))] n)]) `shouldSatisfy` isLeft
 
     it "types a simple mapper " $
-      toTypedSmt (Abstraction Nothing "wefw" [] [(Mapper Nothing "nameOFaMapper" [("i", Nothing), ("v", Just (AShape GaiwanInt))] v)])
+      toTypedSmtSimple (Abstraction Nothing "wefw" [] [(Mapper Nothing "nameOFaMapper" [("i", Nothing), ("v", Just (AShape GaiwanInt))] v)])
         `shouldBe` Right (TAbstraction (GaiwanArrow [] (GTransformType M.empty [GaiwanBuf (Var "n" False) GaiwanInt] [GaiwanBuf (Var "n" False) GaiwanInt])) "wefw" [] [TMapper (GTransformType M.empty [GaiwanBuf (Var "n" False) GaiwanInt] [GaiwanBuf (Var "n" False) GaiwanInt]) "nameOFaMapper" ["i", "v"] (Var "v" False)])
     it "types a simple shaper " $
-      toTypedSmt (Abstraction Nothing "nameOfAShaper" [] [Shaper (Just (ABuf (GaiwanBuf n GaiwanInt))) "nameOFaMapper" [("i", Nothing), ("v", Just (ABuf (GaiwanBuf n GaiwanInt)))] (ArrayGet v (Var "i" False))])
+      toTypedSmtSimple (Abstraction Nothing "nameOfAShaper" [] [Shaper (Just (ABuf (GaiwanBuf n GaiwanInt))) "nameOFaMapper" [("i", Nothing), ("v", Just (ABuf (GaiwanBuf n GaiwanInt)))] (ArrayGet v (Var "i" False))])
         `shouldBe` Right (TAbstraction (GaiwanArrow [] (GTransformType M.empty [GaiwanBuf (Var "n" False) GaiwanInt] [GaiwanBuf (Var "n" False) GaiwanInt])) "nameOfAShaper" [] [TShaper (GTransformType M.empty [GaiwanBuf (Var "n" False) GaiwanInt] [GaiwanBuf (Var "n" False) GaiwanInt]) "nameOFaMapper" ["i", "v"] (ArrayGet (Var "v" False) (Var "i" False))])
     it "types a simple reducer " $
-      toTypedSmt (Abstraction Nothing "yolo" [] [(Reducer (Just (ABuf (GaiwanBuf (Int 1) GaiwanInt))) "nameOFaMapper" [("i", Nothing), ("acc", Nothing), ("v", Just (AShape GaiwanInt))] (Int 5) (Plus (Var "acc" False) v))])
+      toTypedSmtSimple (Abstraction Nothing "yolo" [] [(Reducer (Just (ABuf (GaiwanBuf (Int 1) GaiwanInt))) "nameOFaMapper" [("i", Nothing), ("acc", Nothing), ("v", Just (AShape GaiwanInt))] (Int 5) (Plus (Var "acc" False) v))])
         `shouldBe` Right (TAbstraction (GaiwanArrow [] (GTransformType M.empty [GaiwanBuf (Var "n" False) GaiwanInt] [GaiwanBuf (Int 1) GaiwanInt])) "yolo" [] [TReducer (GTransformType M.empty [GaiwanBuf (Var "n" False) GaiwanInt] [GaiwanBuf (Int 1) GaiwanInt]) "nameOFaMapper" ["i", "acc", "v"] (Int 5) (Plus (Var "acc" False) (Var "v" False))])
     it "types a simple an empty abstraction" $
-      toTypedSmt (Abstraction Nothing "nameOFanAbstraction" [("size", Just (AShape GaiwanInt))] [])
+      toTypedSmtSimple (Abstraction Nothing "nameOFanAbstraction" [("size", Just (AShape GaiwanInt))] [])
         `shouldSatisfy` isLeft
 
     it "types a simple mapper in an abstraction" $
-      toTypedSmt
+      toTypedSmtSimple
         ( Abstraction
             Nothing
             "nameOFanAbstraction"
@@ -152,7 +153,7 @@ spec = do
     -- Handle empty case
 
     it "types a two mapper in an abstraction" $
-      toTypedSmt
+      toTypedSmtSimple
         ( Abstraction
             Nothing
             "nameOFanAbstraction"
@@ -172,7 +173,7 @@ spec = do
           )
 
     it "types a two mapper in an abstraction with var" $
-      toTypedSmt
+      toTypedSmtSimple
         ( Abstraction
             Nothing
             "nameOFanAbstraction"
@@ -206,7 +207,7 @@ spec = do
           )
 
     it "types a two mapper in an abstraction with var" $
-      toTypedSmt
+      toTypedSmtSimple
         ( Abstraction
             Nothing
             "nameOFanAbstraction"
@@ -259,7 +260,14 @@ spec = do
                       )
                       []
                   ]
-                  [TRetrun (GTransformType (M.fromList [("k", GaiwanBuf (Var "freshname" False) (TVar "freshname"))]) [] [GaiwanBuf (Var "freshname" False) (TVar "freshname")]) ["k"]]
+                  [ TRetrun
+                      ( GTransformType
+                          (M.fromList [("k", GaiwanBuf (Var "freshlen_0" False) (TVar "freshname_0"))])
+                          []
+                          [GaiwanBuf (Var "freshlen_0" False) (TVar "freshname_0")]
+                      )
+                      ["k"]
+                  ]
               ]
           )
 

@@ -98,14 +98,12 @@ substExcept kv args = simpleSubstMult (kvExcept args kv)
 
 kvExcept args kv = map (\(k, vv) -> (Var k False, vv)) $ kvExceptBase args kv
 
-kvExceptBase :: Eq a => [a] -> [(a,b)] -> [(a,b)]
+kvExceptBase :: Eq a => [a] -> [(a, b)] -> [(a, b)]
 kvExceptBase args = filter (\(k, _) -> k `notElem` args)
-
 
 theI = Var "i" True
 
 substByTheI x = simpleSubst (Var x False) theI
-
 
 processApplication :: PlanData -> TypedTransform -> TmpCode PlanData
 processApplication pd (TShaper t name [iname] exp) = do
@@ -120,12 +118,10 @@ processApplication pd (TMapper t name [iname, dname] exp) = do
   return $ pd & expVal %~ \old -> substByTheI iname (simpleSubst (Var dname False) old exp)
 processApplication _ a = error $ show a
 
-
 --processApplication pd (TAbstraction t _ [] body) =
 --  foldM processApplicationD pd body
 
-
 processApplicationD a b = do
-                  x <- processApplication a b
-                  -- addHostCode $ Infoz $ show x
-                  return x
+  x <- processApplication a b
+  -- addHostCode $ Infoz $ show x
+  return x

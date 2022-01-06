@@ -1,4 +1,6 @@
 #!/usr/bin/env sh
 sed -i '/^.\{4,\}[^-]}$/{s/\s\{3,\}{/                                                                                              {/;s/^\(.\{60\}\)\s\+{/\1{/;s/ *}$/ }/}' src/**/*.y
 prettier -w --prose-wrap=always **/*.md
-ormolu -m inplace **/*.hs
+find src -iname "*.hs" | xargs ormolu -m inplace
+find test -iname "*.hs" | xargs ormolu -m inplace
+

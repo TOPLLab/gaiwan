@@ -34,7 +34,6 @@ flattenBuffers actions = assignBuffers actionsAndNeed
       let neededBufs = union need $ fromList usedBuffers
        in ((action, neededBufs) : acc, difference neededBufs (fromList writtenBuffers))
     foldrWithNeed action (acc, need) = ((action, need) : acc, need) -- todo remove
-
     assignBuffers :: [(GPUAction, Set GPUBuffer)] -> [GPUAction]
     assignBuffers x = reverse $ fst $ L.foldl' assignBufFold ([], (S.empty, [])) x
 
