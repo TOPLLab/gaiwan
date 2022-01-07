@@ -48,7 +48,7 @@ makePlan :: TypedProgram -> [GPUAction]
 makePlan p = snd $ compile $ execCode $ makePlanning p
 
 makePlanning :: TypedProgram -> TmpCode ()
-makePlanning (TypedProg actions) = do
+makePlanning (TypedProg _ actions) = do
   da <- foldM processActions emptyPlan actions
   addHostCode $ Infoz $ show da
   return ()

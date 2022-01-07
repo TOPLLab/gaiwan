@@ -124,7 +124,7 @@ typedStmtName (TMapper _ t _ _) = t
 typedStmtName (TShaper _ t _ _) = t
 typedStmtName (TReducer _ t _ _ _) = t
 
-newtype TypedProgram = TypedProg [TypedInstr]
+data TypedProgram = TypedProg TransformType [TypedInstr]
   deriving (Show, Eq)
 
 checkDefsType :: Program -> Either String [TypedAbstraction]
@@ -134,7 +134,8 @@ checkType :: Program -> Either String TypedProgram
 checkType (Prog s e) = (`evalStateT` 0) $ do
   typedStmts <- mapM toTypedSmt s -- type the definitions
   typedInstrs <- mapM (toTypedInstr typedStmts []) e -- apply the types of the definitions to the instrucions of the coordination language
-  return $ TypedProg typedInstrs
+  resultType <- mergeTList (map typedInstr typedInstrs)
+  return $ TypedProg resultType typedInstrs
 
 nextUniqv :: TypeingOut Int
 nextUniqv = do
