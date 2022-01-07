@@ -98,7 +98,7 @@ data TypedTransform
   deriving (Show, Eq)
 
 data TypedInstr
-  = TIApp TransformType TypedAbstraction [Exp] -- TODO: internals + let + cat
+  = TIApp TransformType TypedAbstraction [Exp]
   | TLoop TransformType Exp String [TypedInstr]
   | TRetrun TransformType [String]
   | TLetB TransformType String [TypedInstr] [TypedInstr]
@@ -246,7 +246,7 @@ toTypedAbst env (Abstraction outType name args parts) = do
   things <- mapM checkAbstrArgs args
   partType <- mapM (toTypedSmtEnv $ map (second AShape) things ++ env) parts
   typedParts <- mergeTList $ map typedStmt partType
-  outT <- checkExpected outType ((\(GTransformType constraints _ [gbs]) -> ABuf gbs) typedParts) -- TODO: with case handle exceptions
+  outT <- checkExpected outType ((\(GTransformType constraints _ [gbs]) -> ABuf gbs) typedParts)
   return $
     TAbstraction (GaiwanArrow (map snd things) typedParts) name (map fst args) partType
 
@@ -364,7 +364,7 @@ joinT2 c f (l1 : lr) (r1 : rr) t = do
   tN <- mapM (r True) t
   lN <- mapM (l True) lr
   rN <- mapM (r True) rr
-  cN <- mapM (l False) c -- check when does not apply TODO should just work instread of fail
+  cN <- mapM (l False) c
   joinT2 cN fN lN rN tN
 joinT2 _ f _ _ t = fail "incompatible number of buffers"
 
@@ -471,7 +471,7 @@ norm (Plus (Times (Var name2 False) (Int a)) (Int b)) = return (name2, a, b)
 norm (Plus (Times (Int a) (Var name2 False)) (Int b)) = return (name2, a, b)
 norm (Int b) = do
   uniqv <- nextUniqv
-  return ("freelen_" ++ show uniqv, 0, b) -- TODO unique name
+  return ("freelen_" ++ show uniqv, 0, b)
 norm idk = fail $ "Could not normalize " ++ show idk
 
 denorm :: (String, Int, Int) -> Exp
