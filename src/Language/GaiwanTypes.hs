@@ -79,10 +79,6 @@ type TaggedStmtType a = GBufOrShape (Tag a)
 
 type TypeingOut = StateT Int (Either String)
 
---instance MonadFail TypeingOut where
-fazant :: forall a. String -> TypeingOut a
-fazant e = StateT $ \_ -> Left e
-
 instance MonadFail (Either String) where
   fail = Left
 
@@ -163,7 +159,7 @@ toTypedInstr definitions env (IApp "fresh" True [Int cnt]) = do
   -- special shaper
   let outType = GTransformType M.empty [] [GaiwanBuf (Int cnt) GaiwanInt]
   return $ TIApp outType (TAbstraction (GaiwanArrow [] outType) "fresh" [] [TShaper outType "fresh" ["i"] (Var "i" False)]) []
-toTypedInstr definitions env a@(IApp name True args) = fazant $ "error: built in funtions not supported yet" ++ show a --TODO
+toTypedInstr definitions env a@(IApp name True args) = fail $ "error: built in funtions not supported yet" ++ show a --TODO
 toTypedInstr definitions env (IApp name False args) = do
   abstraction <- lookupAbst name definitions
   argTypes <- mapM (typeOfBody env) args
@@ -181,7 +177,7 @@ japply :: String -> TransformType -> TransformType -> TypeingOut TransformType
 japply name (GTransformType c1 [] [t1]) (GTransformType c2 [] t2) = do
   (newc, newt) <- constraintUnion (M.insert name t1 c1) c2 t2
   return (GTransformType (M.delete name newc) [] newt)
-japply _ _ _ = fazant "Cannot japply with funciton as first argument"
+japply _ _ _ = fail "Cannot japply with funciton as first argument"
 
 -- | Unify constrains in args
 -- @c1@ and @c2@ will be unified and the resulting changes will also be applied to @outtype@
@@ -189,8 +185,8 @@ japply _ _ _ = fazant "Cannot japply with funciton as first argument"
 constraintUnion :: Tagable a => Constraints a -> Constraints a -> [GaiwanBuf a] -> TypeingOut (Constraints a, [GaiwanBuf a])
 constraintUnion c1 c2 outtype = do
   let overlap = M.keys c1 `L.intersect` M.keys c2
-  c1vals <- maybe (fazant "err") return $ mapM (`M.lookup` c1) overlap
-  c2vals <- maybe (fazant "err") return $ mapM (`M.lookup` c2) overlap
+  c1vals <- maybe (fail "err") return $ mapM (`M.lookup` c1) overlap
+  c2vals <- maybe (fail "err") return $ mapM (`M.lookup` c2) overlap
   let combinedTagedConstraints = M.union (M.map (renameb 1) c1) (M.map (renameb 2) c2)
   GTransformType c1c2new c1c2valsnew outtypenew <-
     unrename
@@ -204,10 +200,10 @@ abstrType (TAbstraction t _ _ _) = t
 
 checkArgs :: AbstType -> [GBufOrShapeDefault] -> TypeingOut TransformType
 checkArgs (GaiwanArrow from to) args | map AShape from == args = return to
-checkArgs fulltype@(GaiwanArrow from to) args = fazant $ "Argument of bad type: " ++ show from ++ " but got  " ++ show args ++ "as an argument to " ++ show fulltype
+checkArgs fulltype@(GaiwanArrow from to) args = fail $ "Argument of bad type: " ++ show from ++ " but got  " ++ show args ++ "as an argument to " ++ show fulltype
 
 lookupAbst :: String -> [TypedAbstraction] -> TypeingOut TypedAbstraction
-lookupAbst name [] = fazant $ "Could not find defintion for" ++ name
+lookupAbst name [] = fail $ "Could not find defintion for" ++ name
 lookupAbst name (stmt : _) | name == abstrName stmt = return stmt
 lookupAbst name (_ : sr) = lookupAbst name sr
 
@@ -245,7 +241,7 @@ toTypedSmt :: Abstraction -> TypeingOut TypedAbstraction
 toTypedSmt = toTypedAbst []
 
 toTypedAbst :: EnvType -> Abstraction -> TypeingOut TypedAbstraction
-toTypedAbst env (Abstraction outType name args []) = fazant "Cannot make abstraction without content"
+toTypedAbst env (Abstraction outType name args []) = fail "Cannot make abstraction without content"
 toTypedAbst env (Abstraction outType name args parts) = do
   things <- mapM checkAbstrArgs args
   partType <- mapM (toTypedSmtEnv $ map (second AShape) things ++ env) parts
@@ -255,8 +251,8 @@ toTypedAbst env (Abstraction outType name args parts) = do
     TAbstraction (GaiwanArrow (map snd things) typedParts) name (map fst args) partType
 
 checkAbstrArgs :: (String, Maybe GBufOrShapeDefault) -> TypeingOut (String, GShape String)
-checkAbstrArgs (name, Nothing) = fazant "all the arguments of an abstraction need to be set"
-checkAbstrArgs (name, Just (ABuf _)) = fazant "Abstractions can only take scalars, not buffers"
+checkAbstrArgs (name, Nothing) = fail "all the arguments of an abstraction need to be set"
+checkAbstrArgs (name, Just (ABuf _)) = fail "Abstractions can only take scalars, not buffers"
 checkAbstrArgs (name, Just (AShape shape)) = return (name, shape)
 
 toTypedSmtEnv :: EnvType -> Stmt -> TypeingOut TypedTransform
@@ -273,7 +269,7 @@ toTypedSmtEnv env (Mapper outType name args@[(indexArg, indexType), (dataVarName
         name
         (map fst args)
         body
-toTypedSmtEnv env (Mapper outType name args body) = fazant "Incorrect argument given to mapper"
+toTypedSmtEnv env (Mapper outType name args body) = fail "Incorrect argument given to mapper"
 toTypedSmtEnv env (Shaper outType@(Just (ABuf outTypeR@(GaiwanBuf _ elemType))) name args@((indexArg, indexType) : otherArgs) body)
   | maybeGaiwanInt indexType = do
     extraArgsBuf <- checkSndJustList "all the arguments of a shaper must have a specified buffer type" otherArgs
@@ -285,12 +281,12 @@ toTypedSmtEnv env (Shaper outType@(Just (ABuf outTypeR@(GaiwanBuf _ elemType))) 
         name
         (map fst args)
         body
-toTypedSmtEnv env s@(Shaper _ name ((indexArg, indexType) : otherArgs) _) | maybeGaiwanInt indexType = fazant $ "Invalid out type for shaper, expected a buffer for " ++ show s
-toTypedSmtEnv env s@Shaper {} = fazant $ "Incorrect argument given to " ++ show s
+toTypedSmtEnv env s@(Shaper _ name ((indexArg, indexType) : otherArgs) _) | maybeGaiwanInt indexType = fail $ "Invalid out type for shaper, expected a buffer for " ++ show s
+toTypedSmtEnv env s@Shaper {} = fail $ "Incorrect argument given to " ++ show s
 toTypedSmtEnv env (Reducer outType name args@[(indexArg, indexType), (accArg, accType), (dataArg, dataType@(Just dataTypeR))] initExp body)
   | maybeGaiwanInt indexType = do
     AShape checkecAccType <- typeWithExpection accType env initExp
-    if AShape checkecAccType == dataTypeR then return () else fazant "Accumulator type and init expression are not of the same type"
+    if AShape checkecAccType == dataTypeR then return () else fail "Accumulator type and init expression are not of the same type"
     outElemType <- bufferType1 outType
     AShape checkedOutType <-
       typeWithExpectionAndJustArgs
@@ -305,14 +301,14 @@ toTypedSmtEnv env (Reducer outType name args@[(indexArg, indexType), (accArg, ac
         (map fst args)
         initExp
         body
-toTypedSmtEnv env Reducer {} = fazant "Incorrect argument given to Reducer"
+toTypedSmtEnv env Reducer {} = fail "Incorrect argument given to Reducer"
 
 -- | Paste a list of Statement Types onto each other
 mergeTList :: [TransformType] -> TypeingOut TransformType
 mergeTList [a, b] = mergeT a b
 mergeTList [a] = return a
 mergeTList (a : ar) = mergeTList ar >>= mergeT a
-mergeTList [] = fazant "empty merge"
+mergeTList [] = fail "empty merge"
 
 -- | merge two tranformationTypes like function composition (and adjust buffer sizes if needed)
 mergeT :: Tagable a => GTransformType a -> GTransformType a -> TypeingOut (GTransformType a)
@@ -325,7 +321,7 @@ mergeTTaged ty1@(GTransformType c1 from1 to1) ty2@(GTransformType c2 from2 to2) 
   theC <- constraints to1 from2
   -- apply the solution of the merge of the type vars and then adjust buffersizes
   joinT (applym theC ty1) (applym theC ty2)
-mergeTTaged _ _ = fazant "cannot merge with constraint on the right"
+mergeTTaged _ _ = fail "cannot merge with constraint on the right"
 
 joinT :: Tagable a => GTransformType (Tag a) -> GTransformType (Tag a) -> TypeingOut (GTransformType (Tag a))
 joinT (GTransformType c1 from1 to1) (GTransformType c2 from2 to2)
@@ -333,7 +329,7 @@ joinT (GTransformType c1 from1 to1) (GTransformType c2 from2 to2)
     joinT1
       RecordType {toAdjustC = c1, toAdjustB = from1, toMatch = to1}
       RecordType {toAdjustC = c2, toAdjustB = to2, toMatch = from2}
-joinT GTransformType {} GTransformType {} = fazant "incompatible number of args"
+joinT GTransformType {} GTransformType {} = fail "incompatible number of args"
 
 data RecordType a = RecordType
   { toAdjustB :: [GaiwanBuf a],
@@ -358,7 +354,7 @@ joinT1
     where
       reJoin :: GaiwanBuf a -> (String, Int, Int) -> GaiwanBuf a
       reJoin (GaiwanBuf exp gs) newSize = GaiwanBuf (denorm newSize) gs
-joinT1 _ _ = fazant "mc2 was non empty"
+joinT1 _ _ = fail "mc2 was non empty"
 
 joinT2 :: [(String, Int, Int)] -> [(String, Int, Int)] -> [(String, Int, Int)] -> [(String, Int, Int)] -> [(String, Int, Int)] -> TypeingOut ([(String, Int, Int)], [(String, Int, Int)], [(String, Int, Int)])
 joinT2 c f [] [] t = return (c, f, t)
@@ -368,9 +364,9 @@ joinT2 c f (l1 : lr) (r1 : rr) t = do
   tN <- mapM (r True) t
   lN <- mapM (l True) lr
   rN <- mapM (r True) rr
-  cN <- mapM (l False) c -- check when does not apply TODO should just work instread of fazant
+  cN <- mapM (l False) c -- check when does not apply TODO should just work instread of fail
   joinT2 cN fN lN rN tN
-joinT2 _ f _ _ t = fazant "incompatible number of buffers"
+joinT2 _ f _ _ t = fail "incompatible number of buffers"
 
 -- | solve
 solveTCnt ::
@@ -388,7 +384,7 @@ solveTCnt
       -- Solve modulo operation to find value for v
       v <-
         maybe
-          (fazant $ "Could not unify" ++ show (a2, b3 - b2, a3) ++ show (map (\v -> (a2 * v - (b3 - b2)) `mod` a3 == 0) [0 .. (abs a3)]))
+          (fail $ "Could not unify" ++ show (a2, b3 - b2, a3) ++ show (map (\v -> (a2 * v - (b3 - b2)) `mod` a3 == 0) [0 .. (abs a3)]))
           return
           $ find (\v -> (a2 * v - (b3 - b2)) `mod` a3 == 0) [0 .. (abs a3)]
       let leftTransformer = \assertName (name1, a1, b1) ->
@@ -417,7 +413,7 @@ constraintss (TVar a) b = return [(a, b)]
 constraintss a (TVar b) = return [(b, a)]
 constraintss GaiwanInt GaiwanInt = return []
 constraintss (GaiwanTuple a) (GaiwanTuple b) = listConstraints a b
-constraintss _ _ = fazant "Could not match arguments"
+constraintss _ _ = fail "Could not match arguments"
 
 listConstraints :: Eq a => [GShape (Tag a)] -> [GShape (Tag a)] -> TypeingOut [(Tag a, GShape (Tag a))]
 listConstraints (a : ar) (b : bs) = do
@@ -425,7 +421,7 @@ listConstraints (a : ar) (b : bs) = do
   r <- listConstraints (map (applyms prev) ar) (map (applyms prev) bs)
   return $ map (second (applyms r)) prev ++ r
 listConstraints [] [] = return []
-listConstraints _ _ = fazant "unequal length in listConstraints"
+listConstraints _ _ = fail "unequal length in listConstraints"
 
 -- | Apply typevar constraint solution of Transformtype (inculding contraints)
 applym :: Eq a => [(Tag a, GShape (Tag a))] -> GTransformType (Tag a) -> GTransformType (Tag a)
@@ -476,13 +472,13 @@ norm (Plus (Times (Int a) (Var name2 False)) (Int b)) = return (name2, a, b)
 norm (Int b) = do
   uniqv <- nextUniqv
   return ("freelen_" ++ show uniqv, 0, b) -- TODO unique name
-norm idk = fazant $ "Could not normalize " ++ show idk
+norm idk = fail $ "Could not normalize " ++ show idk
 
 denorm :: (String, Int, Int) -> Exp
 denorm (name, a, k) = simplifyExp $ Plus (Times (Int a) (Var name False)) (Int k)
 
 typeWithExpectionAndJustArgs :: Maybe GBufOrShapeDefault -> MaybeEnvType -> Exp -> TypeingOut GBufOrShapeDefault
-typeWithExpectionAndJustArgs x args exp = maybe (fazant "failed to lift maybe tuple") b (mapM liftMaybeTuple args)
+typeWithExpectionAndJustArgs x args exp = maybe (fail "failed to lift maybe tuple") b (mapM liftMaybeTuple args)
   where
     b :: EnvType -> TypeingOut GBufOrShapeDefault
     b actualArgs = typeWithExpection x actualArgs exp
@@ -495,12 +491,12 @@ typeWithExpection x args exp = do
 checkExpected :: (Eq a, Show a) => Maybe (GBufOrShape a) -> GBufOrShape a -> TypeingOut (GBufOrShape a)
 checkExpected Nothing b = return b
 checkExpected (Just a) b | a == b = return b
-checkExpected (Just a) b = fazant $ "Expected outtype does not match " ++ show a ++ " but got " ++ show b
+checkExpected (Just a) b = fail $ "Expected outtype does not match " ++ show a ++ " but got " ++ show b
 
 toShapeList :: [GBufOrShape String] -> TypeingOut [GShape String]
 toShapeList ((AShape a) : r) = (a :) <$> toShapeList r
 toShapeList [] = return []
-toShapeList _ = fazant "Not all shape"
+toShapeList _ = fail "Not all shape"
 
 typeOfBody :: EnvType -> Exp -> TypeingOut GBufOrShapeDefault
 typeOfBody env (Plus a b) = typeOfMathBinop env a b
@@ -518,47 +514,47 @@ typeOfBody env (Select t index) = do
   res <- typeOfBody env t
   case res of
     (AShape (GaiwanTuple types)) | index >= 0 && index < length types -> return $ AShape $ types !! index
-    (AShape (GaiwanTuple types)) -> fazant $ "Tuple index (" ++ show index ++ ") out of range"
-    t -> fazant $ "Can only select from Tuple, not from " ++ show t
+    (AShape (GaiwanTuple types)) -> fail $ "Tuple index (" ++ show index ++ ") out of range"
+    t -> fail $ "Can only select from Tuple, not from " ++ show t
 typeOfBody env (Tuple exps) = AShape . GaiwanTuple <$> (mapM (typeOfBody env) exps >>= toShapeList)
 typeOfBody env var@Var {} = typeOfVar env var
 typeOfBody env (Negate e) = do
   res <- typeOfBody env e
   case res of
     (AShape GaiwanInt) -> return $ AShape GaiwanInt
-    _ -> fazant "Cannot negate"
+    _ -> fail "Cannot negate"
 typeOfBody env (If cond tBranch fBrach) = do
   res <- mapM (typeOfBody env) [cond, tBranch, fBrach]
   case res of
     [tC, tT, fT] | tC == AShape GaiwanInt && tT == fT -> return tT
-    _ -> fazant "Types of if did not match"
-typeOfBody env a@App {} = fazant $ "I don't know this applicaion" ++ show a
-typeOfBody env GPUBufferGet {} = fazant "Cannot use GPUBufferget in body"
+    _ -> fail "Types of if did not match"
+typeOfBody env a@App {} = fail $ "I don't know this applicaion" ++ show a
+typeOfBody env GPUBufferGet {} = fail "Cannot use GPUBufferget in body"
 
 typeOfVar :: EnvType -> Exp -> TypeingOut (GBufOrShape String)
 typeOfVar _ (Var name True) = error "not implemented"
-typeOfVar env (Var name False) = maybe (fazant $ name ++ " not in env") return $ lookup name env
-typeOfVar _ _ = fazant "trying to typeOfVar on non variable"
+typeOfVar env (Var name False) = maybe (fail $ name ++ " not in env") return $ lookup name env
+typeOfVar _ _ = fail "trying to typeOfVar on non variable"
 
 typeOfMathBinop :: EnvType -> Exp -> Exp -> TypeingOut (GBufOrShape String)
 typeOfMathBinop env a b = do
   res <- mapM (typeOfBody env) [a, b]
   case res of
     [AShape GaiwanInt, AShape GaiwanInt] -> return $ AShape GaiwanInt
-    t -> fazant $ "failed to type math binop expected two ints, got " ++ show t ++ " for " ++ show [a, b]
+    t -> fail $ "failed to type math binop expected two ints, got " ++ show t ++ " for " ++ show [a, b]
 
 shapeOfArrayAccess :: EnvType -> Exp -> Exp -> TypeingOut StmtShape
 shapeOfArrayAccess env array index = do
   res <- mapM (typeOfBody env) [array, index]
   case res of
     [ABuf (GaiwanBuf _ ty), AShape GaiwanInt] -> return ty
-    [ABuf (GaiwanBuf _ ty), _] -> fazant "failed to type array access: index is not an int"
-    [at, AShape GaiwanInt] -> fazant $ "failed to type array access:" ++ show array ++ " was not an array but " ++ show at
-    _ -> fazant "Crititical failure! TODO FIXME"
+    [ABuf (GaiwanBuf _ ty), _] -> fail "failed to type array access: index is not an int"
+    [at, AShape GaiwanInt] -> fail $ "failed to type array access:" ++ show array ++ " was not an array but " ++ show at
+    _ -> fail "Crititical failure! TODO FIXME"
 
 -- | Transform a Maybe to an Eiterh string
 checkJust :: String -> Maybe a -> TypeingOut a
-checkJust msg = maybe (fazant msg) return
+checkJust msg = maybe (fail msg) return
 
 checkSndJustList :: String -> [(b, Maybe a)] -> TypeingOut [(b, a)]
 checkSndJustList msg a = checkJust msg $ mapM liftMaybeTuple a
@@ -569,12 +565,12 @@ liftMaybeTuple (a, Nothing) = Nothing
 
 bufferType1 :: Maybe GBufOrShapeDefault -> TypeingOut (Maybe StmtShape)
 bufferType1 (Just (ABuf (GaiwanBuf (Int 1) b))) = return $ Just b
-bufferType1 (Just (ABuf GaiwanBuf {})) = fazant "non buffer type with length one for out of reducer"
-bufferType1 (Just _) = fazant "non buffer type"
+bufferType1 (Just (ABuf GaiwanBuf {})) = fail "non buffer type with length one for out of reducer"
+bufferType1 (Just _) = fail "non buffer type"
 bufferType1 Nothing = return Nothing
 
 -- | Get the type of the elements of a buffer argument
 liftMaybeBuff :: (String, Maybe GBufOrShapeDefault) -> TypeingOut (String, GaiwanBufDefault)
-liftMaybeBuff (a, Nothing) = fazant "No type given"
+liftMaybeBuff (a, Nothing) = fail "No type given"
 liftMaybeBuff (a, Just (ABuf buf)) = return (a, buf)
-liftMaybeBuff (a, Just (AShape _)) = fazant "Got scalar, expeced buffer"
+liftMaybeBuff (a, Just (AShape _)) = fail "Got scalar, expeced buffer"
