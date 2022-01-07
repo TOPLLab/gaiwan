@@ -80,7 +80,7 @@ ExpKinds : ExpApp                                           { (appToInstr $1) ::
          | ExpLoop                                          { $1  :: Instr }
          | let var '=' bracO Exp bracC
            in bracO Exp bracC                               { (LetB $2 $5 $9) }
-         | return var                                       { (Return $2) }
+         | return var                                       { (Return [$2]) }
 
 ExpApp :: { Exp }
 ExpApp : avar '(' explist ')'                               { mkApp $1 (reverse $3) }

@@ -18,7 +18,7 @@ data Instr
   = IApp String Bool [Exp]
   | Loop Exp String [Instr]
   | LetB String [Instr] [Instr]
-  | Return String
+  | Return [String]
   deriving (Show, Eq)
 
 data Exp

@@ -90,7 +90,7 @@ class Eq a => Tagable a where
   untagify :: Tag a -> a
 
 instance Tagable String where
-  untagify v = show v
+  untagify (tag, name) = name ++ "@" ++ show tag
 
 data TypedAbstraction = TAbstraction AbstType String [String] [TypedTransform]
   deriving (Show, Eq)
@@ -142,11 +142,15 @@ nextUniqv = do
   put (uniqv + 1)
   return uniqv
 
-toTypedInstr :: [TypedAbstraction] -> EnvType -> Instr -> TypeingOut TypedInstr
-toTypedInstr definitions env (Return name) = do
+nextUniqvBuf :: TypeingOut (GaiwanBuf String)
+nextUniqvBuf = do
   uniqv <- nextUniqv
-  let outType = GaiwanBuf (Var ("freshlen_" ++ (show uniqv)) False) (TVar $ "freshname_" ++ (show uniqv)) -- TODOj
-  return $ TRetrun (GTransformType (M.singleton name outType) [] [outType]) [name]
+  return $ GaiwanBuf (Var ("freshlen_" ++ (show uniqv)) False) (TVar $ "freshname_" ++ (show uniqv))
+
+toTypedInstr :: [TypedAbstraction] -> EnvType -> Instr -> TypeingOut TypedInstr
+toTypedInstr definitions env (Return names) = do
+  outTypes <- mapM (const nextUniqvBuf) names
+  return $ TRetrun (GTransformType (M.fromList (zip names outTypes)) [] outTypes) names
 toTypedInstr definitions env (LetB name wl1 wl2) = do
   twl1b <- mapM (toTypedInstr definitions env) wl1
   twl1 <- mergeTList $ map typedInstr twl1b
@@ -359,13 +363,45 @@ joinT2 :: [(String, Int, Int)] -> [(String, Int, Int)] -> [(String, Int, Int)] -
 joinT2 c f [] [] t = return (c, f, t)
 joinT2 c f (l1 : lr) (r1 : rr) t = do
   (l, r) <- solveTCnt l1 r1
-  fN <- mapM l f
-  tN <- mapM r t
-  lN <- mapM l lr
-  rN <- mapM r rr
-  cN <- mapM l c -- check when does not apply TODO should just work instread of fazant
+  fN <- mapM (l True) f
+  tN <- mapM (r True) t
+  lN <- mapM (l True) lr
+  rN <- mapM (r True) rr
+  cN <- mapM (l False) c -- check when does not apply TODO should just work instread of fazant
   joinT2 cN fN lN rN tN
 joinT2 _ f _ _ t = fazant "incompatible number of buffers"
+
+-- | solve
+solveTCnt ::
+  (String, Int, Int) ->
+  (String, Int, Int) ->
+  TypeingOut
+    ( Bool -> (String, Int, Int) -> TypeingOut (String, Int, Int),
+      Bool -> (String, Int, Int) -> TypeingOut (String, Int, Int) -- (Sizes of the inputs, sizes of the output)
+    )
+solveTCnt
+  (name2, a2, b2) -- overlapping sizes, these 2 should be unified
+  (name3, a3, b3) -- -/
+    =
+    do
+      -- Solve modulo operation to find value for v
+      v <-
+        maybe
+          (fazant $ "Could not unify" ++ show (a2, b3 - b2, a3) ++ show (map (\v -> (a2 * v - (b3 - b2)) `mod` a3 == 0) [0 .. (abs a3)]))
+          return
+          $ find (\v -> (a2 * v - (b3 - b2)) `mod` a3 == 0) [0 .. (abs a3)]
+      let leftTransformer = \assertName (name1, a1, b1) ->
+            if name1 == name2 || a1 == 0
+              then return (name2, a1 * u, b1 + a1 * v)
+              else return (name1, a1, b1) -- leave unchanged
+      let rightTransformer = \assertName (name4, a4, b4) ->
+            if name4 == name3 || a4 == 0
+              then return (name3, a4 * div (a2 * u) a3, b4 + a4 * div (a2 * v + b2 - b3) a3)
+              else return (name4, a4, b4) -- leave unchanged
+      return (leftTransformer, rightTransformer)
+    where
+      n = Var name2 False
+      u = abs $ div a3 (gcd a2 a3)
 
 normBufSize :: GaiwanBuf a -> TypeingOut (String, Int, Int)
 normBufSize (GaiwanBuf size _) = norm size
@@ -443,35 +479,6 @@ norm idk = fazant $ "Could not normalize " ++ show idk
 
 denorm :: (String, Int, Int) -> Exp
 denorm (name, a, k) = simplifyExp $ Plus (Times (Int a) (Var name False)) (Int k)
-
--- | solve
-solveTCnt ::
-  (String, Int, Int) ->
-  (String, Int, Int) ->
-  TypeingOut ((String, Int, Int) -> TypeingOut (String, Int, Int), (String, Int, Int) -> TypeingOut (String, Int, Int)) -- (Sizes of the inputs, sizes of the output)
-solveTCnt
-  (name2, a2, b2) -- overlapping sizes, these 2 should be unified
-  (name3, a3, b3) -- -/
-    =
-    do
-      -- Solve modulo operation to find value for v
-      v <-
-        maybe
-          (fazant $ "Could not unify" ++ show (a2, b3 - b2, a3) ++ show (map (\v -> (a2 * v - (b3 - b2)) `mod` a3 == 0) [0 .. (abs a3)]))
-          return
-          $ find (\v -> (a2 * v - (b3 - b2)) `mod` a3 == 0) [0 .. (abs a3)]
-      let leftTransformer = \(name1, a1, b1) ->
-            if name1 == name2 || a1 == 0
-              then return (name2, a1 * u, b1 + a1 * v)
-              else fazant "All size varaibles for buffers in a single acion must be the same"
-      let rightTransformer = \(name4, a4, b4) ->
-            if name4 == name3 || a4 == 0
-              then return (name3, a4 * div (a2 * u) a3, b4 + a4 * div (a2 * v + b2 - b3) a3)
-              else fazant "All size varaibles for buffers in a single acion must be the same"
-      return (leftTransformer, rightTransformer)
-    where
-      n = Var name2 False
-      u = abs $ div a3 (gcd a2 a3)
 
 typeWithExpectionAndJustArgs :: Maybe GBufOrShapeDefault -> MaybeEnvType -> Exp -> TypeingOut GBufOrShapeDefault
 typeWithExpectionAndJustArgs x args exp = maybe (fazant "failed to lift maybe tuple") b (mapM liftMaybeTuple args)

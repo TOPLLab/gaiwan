@@ -242,8 +242,72 @@ spec = do
         `shouldBe` Right (TAbstraction (GaiwanArrow [GaiwanInt] (GTransformType M.empty [GaiwanBuf (Plus (Times (Int 4) (Var "n" False)) (Int 2)) GaiwanInt] [GaiwanBuf (Var "n" False) GaiwanInt])) "nameOFanAbstraction" ["size"] [TShaper (GTransformType M.empty [GaiwanBuf (Times (Int 2) (Var "n" False)) (TVar "A")] [GaiwanBuf (Var "n" False) (GaiwanTuple [TVar "A", TVar "A"])]) "nameOFaMapper" ["i", "v"] (Tuple [ArrayGet (Var "v" False) (Times (Int 2) (Var "i" False)), ArrayGet (Var "v" False) (Plus (Int 1) (Times (Int 2) (Var "i" False)))]), TShaper (GTransformType M.empty [GaiwanBuf (Plus (Times (Int 2) (Var "n" False)) (Int 1)) (TVar "B")] [GaiwanBuf (Var "n" False) (GaiwanTuple [TVar "B", TVar "B"])]) "nameOFaMapper" ["i", "v"] (Tuple [ArrayGet (Var "v" False) (Times (Int 2) (Var "i" False)), ArrayGet (Var "v" False) (Plus (Int 1) (Times (Int 2) (Var "i" False)))]), TMapper (GTransformType M.empty [GaiwanBuf (Var "n" False) (GaiwanTuple [GaiwanTuple [GaiwanInt, GaiwanInt], GaiwanTuple [GaiwanInt, GaiwanInt]])] [GaiwanBuf (Var "n" False) GaiwanInt]) "nameOFaMapper" ["i", "v"] (Plus (Select (Select (Var "v" False) 1) 1) (Select (Select (Var "v" False) 1) 0))])
 
   describe "Language.Gaiwan simple LetB Return" $ do
-    let prog = Prog [] [LetB "k" [IApp "fresh" True [Int 33554432]] [Return "k"]]
+    let prog = Prog [] [LetB "k" [IApp "fresh" True [Int 33554432]] [Return ["k", "unbound"]]]
     it "does not parse garbage" $
+      checkType prog
+        `shouldBe` Right
+          ( TypedProg
+              [ TLetB
+                  ( GTransformType
+                      ( M.fromList [("unbound", GaiwanBuf (Var "freshlen_1" False) (TVar "freshname_1@2"))]
+                      )
+                      []
+                      [ GaiwanBuf (Int 33554432) GaiwanInt,
+                        GaiwanBuf (Var "freshlen_1" False) (TVar "freshname_1@2")
+                      ]
+                  )
+                  "k"
+                  [ TIApp
+                      ( GTransformType
+                          M.empty
+                          []
+                          [ GaiwanBuf (Int 33554432) GaiwanInt
+                          ]
+                      )
+                      ( TAbstraction
+                          ( GaiwanArrow
+                              []
+                              ( GTransformType
+                                  (M.fromList [])
+                                  []
+                                  [ GaiwanBuf (Int 33554432) GaiwanInt
+                                  ]
+                              )
+                          )
+                          "fresh"
+                          []
+                          [ TShaper
+                              ( GTransformType
+                                  (M.fromList [])
+                                  []
+                                  [ GaiwanBuf (Int 33554432) GaiwanInt
+                                  ]
+                              )
+                              "fresh"
+                              ["i"]
+                              (Var "i" False)
+                          ]
+                      )
+                      []
+                  ]
+                  [ TRetrun
+                      ( GTransformType
+                          ( M.fromList
+                              [ ("k", GaiwanBuf (Var "freshlen_0" False) (TVar "freshname_0")),
+                                ("unbound", GaiwanBuf (Var "freshlen_1" False) (TVar "freshname_1"))
+                              ]
+                          )
+                          []
+                          [GaiwanBuf (Var "freshlen_0" False) (TVar "freshname_0"), GaiwanBuf (Var "freshlen_1" False) (TVar "freshname_1")]
+                      )
+                      ["k", "unbound"]
+                  ]
+              ]
+          )
+
+  describe "Language.Gaiwan simple LetB Return" $ do
+    let prog = Prog [] [LetB "k" [IApp "fresh" True [Int 33554432]] [Return ["k"]]]
+    it "Correcty combines" $
       checkType prog
         `shouldBe` Right
           ( TypedProg
@@ -271,6 +335,76 @@ spec = do
               ]
           )
 
+  describe "Language.Gaiwan simple Return" $ do
+    let prog = Prog [] [Return ["k"]]
+    it "Simple return" $
+      checkType prog
+        `shouldBe` Right
+          ( TypedProg
+              [ TRetrun (GTransformType (M.fromList [("k", GaiwanBuf (Var "freshlen_0" False) (TVar "freshname_0"))]) [] [GaiwanBuf (Var "freshlen_0" False) (TVar "freshname_0")]) ["k"]
+              ]
+          )
+
+    let prog = Prog [] [Return ["a", "b"]]
+    it "Simple return of two" $
+      checkType prog
+        `shouldBe` Right
+          ( TypedProg
+              [ TRetrun (GTransformType (M.fromList [("a", GaiwanBuf (Var "freshlen_0" False) (TVar "freshname_0")), ("b", GaiwanBuf (Var "freshlen_1" False) (TVar "freshname_1"))]) [] [GaiwanBuf (Var "freshlen_0" False) (TVar "freshname_0"), GaiwanBuf (Var "freshlen_1" False) (TVar "freshname_1")]) ["a", "b"]
+              ]
+          )
+
+    let def =
+          ( Abstraction
+              Nothing
+              "nameOfAShaper"
+              []
+              [ Shaper
+                  (Just (ABuf (GaiwanBuf n (GaiwanTuple [TVar "a", TVar "a"]))))
+                  "nameOFaMapper"
+                  [ ("i", Nothing),
+                    ("v", Just (ABuf (GaiwanBuf n (TVar "a")))),
+                    ("w", Just (ABuf (GaiwanBuf n (TVar "a"))))
+                  ]
+                  ( Tuple
+                      [ (ArrayGet (Var "v" False) (Var "i" False)),
+                        (ArrayGet (Var "w" False) (Var "i" False))
+                      ]
+                  ),
+                ( Mapper
+                    Nothing
+                    "nameOFaMapper"
+                    [ ("i", Nothing),
+                      ("v", Just (AShape $ GaiwanTuple [GaiwanInt, GaiwanInt]))
+                    ]
+                    (Plus (Select (Var "v" False) 0) (Select (Var "v" False) 1))
+                )
+              ]
+          )
+    let prog = Prog [def] [Return ["a", "b"], IApp "nameOfAShaper" False []]
+    it "Simple return of two" $
+      checkType prog
+        `shouldBe` Right
+          ( TypedProg
+              [ TRetrun
+                  ( GTransformType
+                      (M.fromList [("a", GaiwanBuf (Var "freshlen_0" False) (TVar "freshname_0")), ("b", GaiwanBuf (Var "freshlen_1" False) (TVar "freshname_1"))])
+                      []
+                      [GaiwanBuf (Var "freshlen_0" False) (TVar "freshname_0"), GaiwanBuf (Var "freshlen_1" False) (TVar "freshname_1")]
+                  )
+                  ["a", "b"],
+                TIApp
+                  ( GTransformType
+                      (M.fromList [])
+                      [ GaiwanBuf (Var "n" False) GaiwanInt,
+                        GaiwanBuf (Var "n" False) GaiwanInt
+                      ]
+                      [GaiwanBuf (Var "n" False) GaiwanInt]
+                  )
+                  (TAbstraction (GaiwanArrow [] (GTransformType (M.fromList []) [GaiwanBuf (Var "n" False) GaiwanInt, GaiwanBuf (Var "n" False) GaiwanInt] [GaiwanBuf (Var "n" False) GaiwanInt])) "nameOfAShaper" [] [TShaper (GTransformType (M.fromList []) [GaiwanBuf (Var "n" False) (TVar "a"), GaiwanBuf (Var "n" False) (TVar "a")] [GaiwanBuf (Var "n" False) (GaiwanTuple [TVar "a", TVar "a"])]) "nameOFaMapper" ["i", "v", "w"] (Tuple [ArrayGet (Var "v" False) (Var "i" False), ArrayGet (Var "w" False) (Var "i" False)]), TMapper (GTransformType (M.fromList []) [GaiwanBuf (Var "n" False) (GaiwanTuple [GaiwanInt, GaiwanInt])] [GaiwanBuf (Var "n" False) GaiwanInt]) "nameOFaMapper" ["i", "v"] (Plus (Select (Var "v" False) 0) (Select (Var "v" False) 1))])
+                  []
+              ]
+          )
   describe "Language.Gaiwan (parser): check if all demos parse" $ do
     files <- runIO $ listDirectory "demo"
     ffiles <- runIO $ mapM demoNameAndContents files
