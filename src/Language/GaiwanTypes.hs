@@ -142,7 +142,7 @@ nextUniqv = do
 nextUniqvBuf :: TypeingOut (GaiwanBuf String)
 nextUniqvBuf = do
   uniqv <- nextUniqv
-  return $ GaiwanBuf (Var ("freshlen_" ++ (show uniqv)) False) (TVar $ "freshname_" ++ (show uniqv))
+  return $ GaiwanBuf (Var ("freshlen_" ++ show uniqv) False) (TVar $ "freshname_" ++ show uniqv)
 
 toTypedInstr :: [TypedAbstraction] -> EnvType -> Instr -> TypeingOut TypedInstr
 toTypedInstr definitions env (Return names) = do
@@ -312,8 +312,7 @@ mergeTList [] = fail "empty merge"
 
 -- | merge two tranformationTypes like function composition (and adjust buffer sizes if needed)
 mergeT :: Tagable a => GTransformType a -> GTransformType a -> TypeingOut (GTransformType a)
-mergeT t1 t2 = do
-  -- adjust buffersizes and undo rename
+mergeT t1 t2 =
   unrename <$> mergeTTaged (rename 1 t1) (rename 2 t2)
 
 mergeTTaged :: Tagable a => GTransformType (Tag a) -> GTransformType (Tag a) -> TypeingOut (GTransformType (Tag a))
@@ -356,7 +355,18 @@ joinT1
       reJoin (GaiwanBuf exp gs) newSize = GaiwanBuf (denorm newSize) gs
 joinT1 _ _ = fail "mc2 was non empty"
 
-joinT2 :: [(String, Int, Int)] -> [(String, Int, Int)] -> [(String, Int, Int)] -> [(String, Int, Int)] -> [(String, Int, Int)] -> TypeingOut ([(String, Int, Int)], [(String, Int, Int)], [(String, Int, Int)])
+joinT2 ::
+  -- |  constraint acc
+  [(String, Int, Int)] ->
+  -- | from acc
+  [(String, Int, Int)] ->
+  -- | from todo
+  [(String, Int, Int)] ->
+  -- | to todo
+  [(String, Int, Int)] ->
+  -- | to acc
+  [(String, Int, Int)] ->
+  TypeingOut ([(String, Int, Int)], [(String, Int, Int)], [(String, Int, Int)])
 joinT2 c f [] [] t = return (c, f, t)
 joinT2 c f (l1 : lr) (r1 : rr) t = do
   (l, r) <- solveTCnt l1 r1
@@ -379,9 +389,21 @@ solveTCnt ::
 solveTCnt
   (name2, a2, b2) -- overlapping sizes, these 2 should be unified
   (name3, a3, b3) -- -/
+    | name2 == name3 && a2 == a3 && b2 == b3 && name2 /= "n" =
+      return (const return, const return) -- basically id
+solveTCnt
+  (name2, a2, b2) -- overlapping sizes, these 2 should be unified
+  (name3, a3, b3) -- -/
+    | name2 == name3 && name2 /= "n" -- TODO: FIXME REMOVE
+      =
+      fail $ "oh no " ++ show ((name2, a2, b2), (name3, a3, b3))
+solveTCnt
+  (name2, a2, b2) -- overlapping sizes, these 2 should be unified
+  (name3, a3, b3) -- -/
     =
     do
       -- Solve modulo operation to find value for v
+      uniqv <- nextUniqv
       v <-
         maybe
           (fail $ "Could not unify" ++ show (a2, b3 - b2, a3) ++ show (map (\v -> (a2 * v - (b3 - b2)) `mod` a3 == 0) [0 .. (abs a3)]))
@@ -389,11 +411,11 @@ solveTCnt
           $ find (\v -> (a2 * v - (b3 - b2)) `mod` a3 == 0) [0 .. (abs a3)]
       let leftTransformer = \assertName (name1, a1, b1) ->
             if name1 == name2 || a1 == 0
-              then return (name2, a1 * u, b1 + a1 * v)
+              then return ("joinedsize" ++ show uniqv, a1 * u, b1 + a1 * v)
               else return (name1, a1, b1) -- leave unchanged
       let rightTransformer = \assertName (name4, a4, b4) ->
             if name4 == name3 || a4 == 0
-              then return (name3, a4 * div (a2 * u) a3, b4 + a4 * div (a2 * v + b2 - b3) a3)
+              then return ("joinedsize" ++ show uniqv, a4 * div (a2 * u) a3, b4 + a4 * div (a2 * v + b2 - b3) a3)
               else return (name4, a4, b4) -- leave unchanged
       return (leftTransformer, rightTransformer)
     where
