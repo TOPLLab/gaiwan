@@ -394,6 +394,19 @@ solveTCnt
 solveTCnt
   (name2, a2, b2) -- overlapping sizes, these 2 should be unified
   (name3, a3, b3) -- -/
+    | name2 == name3 && (b2 == b3) && (a2 == 0 || a3 == 0) && name2 /= "n" -- TODO: FIXME REMOVE
+      =
+      -- we know that the linear factor must be zero (0*x + b = a₃*x + b ⇒ a₃ = 0)
+      do
+        uniqv <- nextUniqv
+        let zeroTransformer = \assertName (name1, a1, b1) ->
+              if name1 == name2 || a1 == 0
+                then return ("joinedsize" ++ show uniqv, 0, b1)
+                else return (name1, a1, b1) -- leave unchanged
+        return (zeroTransformer, zeroTransformer)
+solveTCnt
+  (name2, a2, b2) -- overlapping sizes, these 2 should be unified
+  (name3, a3, b3) -- -/
     | name2 == name3 && name2 /= "n" -- TODO: FIXME REMOVE
       =
       fail $ "oh no " ++ show ((name2, a2, b2), (name3, a3, b3))
@@ -404,11 +417,15 @@ solveTCnt
     do
       -- Solve modulo operation to find value for v
       uniqv <- nextUniqv
+
       v <-
-        maybe
-          (fail $ "Could not unify" ++ show (a2, b3 - b2, a3) ++ show (map (\v -> (a2 * v - (b3 - b2)) `mod` a3 == 0) [0 .. (abs a3)]))
-          return
-          $ find (\v -> (a2 * v - (b3 - b2)) `mod` a3 == 0) [0 .. (abs a3)]
+        if b2 == b3
+          then return 0
+          else
+            maybe
+              (fail $ "Could not unify" ++ show (a2, b3 - b2, a3) ++ show (map (\v -> (a2 * v - (b3 - b2)) `mod` a3 == 0) [0 .. (abs a3)]))
+              return
+              $ find (\v -> (a2 * v - (b3 - b2)) `mod` a3 == 0) [0 .. (abs a3)]
       let leftTransformer = \assertName (name1, a1, b1) ->
             if name1 == name2 || a1 == 0
               then return ("joinedsize" ++ show uniqv, a1 * u, b1 + a1 * v)

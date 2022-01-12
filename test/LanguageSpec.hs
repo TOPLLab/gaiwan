@@ -120,6 +120,28 @@ spec = do
         )
         `shouldBe` Right (GTransformType M.empty [GaiwanBuf (Times (Int 2) (Var "joinedsize0" False)) GaiwanInt] [GaiwanBuf (Plus (Var "joinedsize0" False) (Int 1)) GaiwanInt])
 
+    it "Merges types correctly: n->(n+2, 19, 2n+4) # (2n, 19,4n)-> n => 2n -> n+1" $
+      mergeTStr
+        ( GTransformType
+            M.empty
+            [ GaiwanBuf (Var "n" False) GaiwanInt
+            ]
+            [ GaiwanBuf (Plus (Var "n" False) (Int 2)) GaiwanInt,
+              GaiwanBuf (Int 19) GaiwanInt,
+              GaiwanBuf (Plus (Times (Int 2) (Var "n" False)) (Int 4)) GaiwanInt
+            ]
+        )
+        ( GTransformType
+            M.empty
+            [ GaiwanBuf (Times (Int 2) (Var "n" False)) GaiwanInt,
+              GaiwanBuf (Int 19) GaiwanInt,
+              GaiwanBuf (Times (Int 4) (Var "n" False)) GaiwanInt
+            ]
+            [ GaiwanBuf (Var "n" False) GaiwanInt
+            ]
+        )
+        `shouldBe` Right (GTransformType M.empty [GaiwanBuf (Times (Int 2) (Var "joinedsize2" False)) GaiwanInt] [GaiwanBuf (Plus (Var "joinedsize2" False) (Int 1)) GaiwanInt])
+
     it "Merges types correctly: n->(2n+4, n+2) # (4n, 2n)-> n => 2n -> n+1" $
       mergeTStr
         ( GTransformType
@@ -139,6 +161,46 @@ spec = do
             ]
         )
         `shouldBe` Right (GTransformType M.empty [GaiwanBuf (Times (Int 2) (Var "joinedsize0" False)) GaiwanInt] [GaiwanBuf (Plus (Var "joinedsize0" False) (Int 1)) GaiwanInt])
+
+    it "Merges types correctly: n->(2n+4, n+2) # (4, 2n)-> n => 0 -> 1" $
+      mergeTStr
+        ( GTransformType
+            M.empty
+            [ GaiwanBuf (Var "n" False) GaiwanInt
+            ]
+            [ GaiwanBuf (Plus (Times (Int 2) (Var "n" False)) (Int 4)) GaiwanInt,
+              GaiwanBuf (Plus (Var "n" False) (Int 2)) GaiwanInt
+            ]
+        )
+        ( GTransformType
+            M.empty
+            [ GaiwanBuf (Int 4) GaiwanInt,
+              GaiwanBuf (Times (Int 2) (Var "n" False)) GaiwanInt
+            ]
+            [ GaiwanBuf (Var "n" False) GaiwanInt
+            ]
+        )
+        `shouldBe` Right (GTransformType M.empty [GaiwanBuf (Int 0) GaiwanInt] [GaiwanBuf (Int 1) GaiwanInt])
+
+    it "Merges types correctly: n->(2n+4, n+2) # (4, 2n)-> n => 0 -> 1" $
+      mergeTStr
+        ( GTransformType
+            M.empty
+            [ GaiwanBuf (Var "n" False) GaiwanInt
+            ]
+            [ GaiwanBuf (Plus (Var "n" False) (Int 2)) GaiwanInt,
+              GaiwanBuf (Plus (Times (Int 2) (Var "n" False)) (Int 4)) GaiwanInt
+            ]
+        )
+        ( GTransformType
+            M.empty
+            [ GaiwanBuf (Times (Int 2) (Var "n" False)) GaiwanInt,
+              GaiwanBuf (Int 4) GaiwanInt
+            ]
+            [ GaiwanBuf (Var "n" False) GaiwanInt
+            ]
+        )
+        `shouldBe` Right (GTransformType M.empty [GaiwanBuf (Int 0) GaiwanInt] [GaiwanBuf (Int 1) GaiwanInt])
 
     it "Merges types correctly: n->n+2 # 2n+1->n  => 2n+1->n+1" $
       mergeTStr
