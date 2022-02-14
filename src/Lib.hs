@@ -32,7 +32,7 @@ run =
     (\err -> print $ "Parsing failed: " ++ err)
     (convert >=> print)
 
-checkParse :: String -> Either String Program
+checkParse :: String -> Either String (Program String)
 checkParse =
   eitherParseGaiwan
     (\err -> Left $ "Parsing failed: " ++ err)
@@ -52,7 +52,7 @@ mkCode (Prog defines main) =
 -- mapM_ registerDef defines
 --- mkOpenCLKernelCode main
 
-convert :: Program -> IO [[Integer]]
+convert :: Program a -> IO [[Integer]] -- TODO figure aout what a should be
 convert program = undefined
 
 -- runOpenCL $ mkCode program

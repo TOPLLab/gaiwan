@@ -53,22 +53,22 @@ import           Language.GaiwanTypes
 %left NEG
 %%
 
-Program :: { Program }
+Program :: { Program String }
 Program : AbstrList Exp                                     { Prog $1 $2 }
 
-Stmt :: { Stmt }
+Stmt :: { Stmt String }
 Stmt  :  function var '(' varlist ')' maybetype StmtBody    { mkFun $1 $6 $2  (reverse $4) $7 }
       |  reducer  var '(' varlist ')' maybetype '(' ExpBase ')' StmtBody { Language.GaiwanTypes.Reducer $6 $2 (reverse $4)  $8 $10 }
 
-Abstr :: { Abstraction }
+Abstr :: { Abstraction String }
 Abstr : abstraction var '(' varlist ')' maybetype bracO   pipedStmt bracC  { Language.GaiwanTypes.Abstraction $6 $2 (reverse $4) (reverse $8) }
       | abstraction var '('         ')' maybetype bracO   pipedStmt bracC  { Language.GaiwanTypes.Abstraction $5 $2 [] (reverse $7) }
 
-AbstrList :: {[Abstraction] }
+AbstrList :: {[Abstraction String ] }
 AbstrList : {[] }
           | Abstr AbstrList {$1 : $2 }
 
-pipedStmt :: { [Stmt] }
+pipedStmt :: { [Stmt String] }
 pipedStmt : Stmt                                            { [$1] }
          | pipedStmt pipe Stmt %prec PIPE                   { $3 : $1 }
 
@@ -104,29 +104,29 @@ pipedExp :: {[Instr] }
 pipedExp : ExpKinds                                         { [$1] }
          | pipedExp pipe ExpKinds %prec PIPE                { $3 : $1 }
 
-typedvar :: { (String, Maybe GBufOrShapeDefault) }
+typedvar :: { (String, Maybe (GBufOrShape String)) }
 typedvar : var {($1, Nothing) }
          | var ':' type {($1, Just $3) }
 
-maybetype :: { Maybe GBufOrShapeDefault }
+maybetype :: { Maybe (GBufOrShape String) }
 maybetype : {- empty -} {Nothing }
           | ':' type {Just $2 }
 
 {- No arrow type needed in the parser -}
-type :: { GBufOrShapeDefault }
+type :: { (GBufOrShape String) }
 type : shape {AShape $1 }
      | shape '[' ExpBase ']'  { ABuf $ GaiwanBuf $3 $1 }
 
-shape :: { StmtShape }
+shape :: { GShape String }
 shape : int { GaiwanInt }
      | var { if $1 == "int" then GaiwanInt else TVar $1 }
      | tuple '(' shapelist ')'                              {  GaiwanTuple (reverse $3) }
 
-shapelist :: { [StmtShape] }
+shapelist :: { [GShape String] }
 shapelist : shape {[$1] }
          | shapelist ',' shape { $3 : $1 }
 
-varlist :: { [(String, Maybe GBufOrShapeDefault)] }
+varlist :: { [(String, Maybe (GBufOrShape String))] }
 varlist : typedvar                                          { [$1] }
         | varlist ',' typedvar                              { $3 : $1 }
 
@@ -157,7 +157,7 @@ ExpBase : ExpApp                                            { $1 }
         | if '(' ExpBase ')'  BracExp else BracExp          { If $3 $5 $7 }
         | let var '=' ExpBase in ExpBase                    { Let $2 $4 $6 }
 
-stmtList :: { [Stmt] }
+stmtList :: { [Stmt String] }
 stmtList :                                                  { [] }
          | stmtList Stmt                                    { $2 : $1 }
 {
@@ -166,10 +166,10 @@ mkApp (Var name builtin) = App name builtin
 
 appToInstr  (App name builtin args)  = IApp name builtin args
 
-mkFun :: FunctionType -> (Maybe GBufOrShapeDefault) -> String -> [(String, Maybe GBufOrShapeDefault)] -> Exp -> Stmt
+mkFun :: FunctionType -> (Maybe (GBufOrShape a)) -> String -> [(String, Maybe (GBufOrShape a))] -> Exp -> Stmt a
 mkFun Language.Tokens.Mapper   =  Language.GaiwanTypes.Mapper
 mkFun Language.Tokens.Shaper =  Language.GaiwanTypes.Shaper
 
-parseGaiwan :: String -> Either String Program
+parseGaiwan :: String -> Either String (Program String)
 parseGaiwan s = runAlex s gaiwanParse
 }

@@ -32,6 +32,7 @@ import Code.Definitions
 import Control.Monad.State.Lazy
 import Data.Bifunctor
 import Data.Foldable
+import Data.Functor
 import qualified Data.List as L
 import qualified Data.Map as M
 import Data.Maybe
@@ -47,7 +48,7 @@ data GAbsType a = GaiwanArrow [GShape a] (GTransformType a)
 data GaiwanBuf a = GaiwanBuf Exp (GShape a)
   deriving (Show, Eq)
 
-type GaiwanBufDefault = GaiwanBuf String
+type GaiwanBufDefault = GaiwanBuf ShapeVar
 
 -- Type of a transformation on buffers
 data GTransformType a = GTransformType (Constraints a) [GaiwanBuf a] [GaiwanBuf a]
@@ -57,7 +58,7 @@ type Constraints a = M.Map String (GaiwanBuf a)
 
 data GBufOrShape a = ABuf (GaiwanBuf a) | AShape (GShape a) deriving (Show, Eq)
 
-type GBufOrShapeDefault = GBufOrShape String
+type GBufOrShapeDefault = GBufOrShape ShapeVar
 
 type TaggedBuff a = GaiwanBuf (Tag a)
 
@@ -67,11 +68,13 @@ type MaybeEnvType = [(String, Maybe GBufOrShapeDefault)]
 
 type VarFreeStmtType = GAbsType Void
 
-type AbstType = GAbsType String
+type AbstType = GAbsType ShapeVar
 
-type TransformType = GTransformType String
+type ShapeVar = Int
 
-type StmtShape = GShape String
+type TransformType = GTransformType ShapeVar
+
+type StmtShape = GShape ShapeVar
 
 type Tag a = (Int, a)
 
@@ -87,6 +90,10 @@ class Eq a => Tagable a where
 
 instance Tagable String where
   untagify (tag, name) = name ++ "@" ++ show tag
+
+instance Tagable ShapeVar where
+  untagify (tag, name) | tag < 10 = 10 * name + tag -- FIXME not needed as names will be unique
+  untagify _ = error "illegal tagging"
 
 data TypedAbstraction = TAbstraction AbstType String [String] [TypedTransform]
   deriving (Show, Eq)
@@ -123,15 +130,77 @@ typedStmtName (TReducer _ t _ _ _) = t
 data TypedProgram = TypedProg TransformType [TypedInstr]
   deriving (Show, Eq)
 
-checkDefsType :: Program -> Either String [TypedAbstraction]
-checkDefsType (Prog s e) = evalStateT (mapM toTypedSmt s) 0
+checkDefsType :: Program String -> Either String [TypedAbstraction]
+checkDefsType (Prog s e) =
+  (`evalStateT` 0) $ do
+    renamedS <- mapM lol s
+    mapM toTypedSmt renamedS
 
-checkType :: Program -> Either String TypedProgram
+checkType :: Program String -> Either String TypedProgram
 checkType (Prog s e) = (`evalStateT` 0) $ do
-  typedStmts <- mapM toTypedSmt s -- type the definitions
+  renamedS <- mapM lol s
+  typedStmts <- mapM toTypedSmt renamedS -- type the definitions
   typedInstrs <- mapM (toTypedInstr typedStmts []) e -- apply the types of the definitions to the instrucions of the coordination language
   resultType <- mergeTList (map typedInstr typedInstrs)
   return $ TypedProg resultType typedInstrs
+
+lol :: Abstraction String -> TypeingOut AbstractionDefault
+lol (Abstraction m_gbos name args steps) = do
+  steps' <- mapM (lol5 M.empty) steps
+  lt <- expandLOLLT M.empty args
+  m_gbos' <- applyLOLLT lt m_gbos
+  args' <- mapM (applyLOLLTM lt) args
+  return $ Abstraction m_gbos' name args' (map fst steps')
+
+lol5 :: M.Map String ShapeVar -> Stmt String -> TypeingOut (Stmt ShapeVar, M.Map String ShapeVar)
+lol5 lt (Mapper m_gbos str x0 exp) = do
+  lt' <- expandLOLLT lt x0
+  m_gbos' <- applyLOLLT lt' m_gbos
+  x0' <- mapM (applyLOLLTM lt') x0
+  return (Mapper m_gbos' str x0' exp, lt')
+lol5 lt (Reducer m_gbos str x0 exp exp') = do
+  lt' <- expandLOLLT lt x0
+  m_gbos' <- applyLOLLT lt' m_gbos
+  x0' <- mapM (applyLOLLTM lt') x0
+  return (Reducer m_gbos' str x0' exp exp', lt')
+lol5 lt (Shaper m_gbos str x0 exp) = do
+  lt' <- expandLOLLT lt x0
+  m_gbos' <- applyLOLLT lt' m_gbos
+  x0' <- mapM (applyLOLLTM lt') x0
+  return (Shaper m_gbos' str x0' exp, lt')
+
+applyLOLLT :: M.Map String ShapeVar -> Maybe (GBufOrShape String) -> TypeingOut (Maybe (GBufOrShape ShapeVar))
+applyLOLLT lt Nothing = return Nothing
+applyLOLLT lt (Just (ABuf (GaiwanBuf exp gs))) = applyLOLLTS lt gs <&> (Just . ABuf . GaiwanBuf exp)
+applyLOLLT lt (Just (AShape gs)) = applyLOLLTS lt gs <&> (Just . AShape)
+
+applyLOLLTS :: M.Map String ShapeVar -> GShape String -> TypeingOut (GShape ShapeVar)
+applyLOLLTS lt GaiwanInt = return GaiwanInt
+applyLOLLTS lt (GaiwanTuple gss) = mapM (applyLOLLTS lt) gss <&> GaiwanTuple
+applyLOLLTS lt (TVar a) = maybe (fail $ "Could not find " ++ a ++ " in applyLOLLTS " ++ (show lt)) (return . TVar) (M.lookup a lt)
+
+applyLOLLTM :: M.Map String ShapeVar -> (String, Maybe (GBufOrShape String)) -> TypeingOut (String, Maybe (GBufOrShape ShapeVar))
+applyLOLLTM lt (name, ty) = do
+  v <- applyLOLLT lt ty
+  return (name, v)
+
+expandLOLLT :: M.Map String ShapeVar -> ArgList String -> TypeingOut (M.Map String ShapeVar)
+expandLOLLT lt [] = return lt
+expandLOLLT lt ((s, Nothing) : xr) = expandLOLLT lt xr
+expandLOLLT lt ((s, Just (ABuf (GaiwanBuf exp gs))) : xr) = do
+  lt' <- expandSingel lt gs
+  expandLOLLT lt' xr
+expandLOLLT lt ((s, Just (AShape gs)) : xr) = do
+  lt' <- expandSingel lt gs
+  expandLOLLT lt' xr
+
+expandSingel :: M.Map String ShapeVar -> GShape String -> TypeingOut (M.Map String ShapeVar)
+expandSingel lt GaiwanInt = return lt
+expandSingel lt (GaiwanTuple gss) = foldrM (flip expandSingel) lt gss
+expandSingel lt (TVar str) | M.member str lt = return lt
+expandSingel lt (TVar str) = do
+  newName <- nextUniqv
+  return $ M.insert str newName lt
 
 nextUniqv :: TypeingOut Int
 nextUniqv = do
@@ -139,10 +208,10 @@ nextUniqv = do
   put (uniqv + 1)
   return uniqv
 
-nextUniqvBuf :: TypeingOut (GaiwanBuf String)
+nextUniqvBuf :: TypeingOut (GaiwanBuf ShapeVar)
 nextUniqvBuf = do
-  uniqv <- nextUniqv
-  return $ GaiwanBuf (Var ("freshlen_" ++ show uniqv) False) (TVar $ "freshname_" ++ show uniqv)
+  uniqv_len <- nextUniqv
+  GaiwanBuf (Var ("freshlen_" ++ show uniqv_len) False) . TVar <$> nextUniqv
 
 toTypedInstr :: [TypedAbstraction] -> EnvType -> Instr -> TypeingOut TypedInstr
 toTypedInstr definitions env (Return names) = do
@@ -210,17 +279,25 @@ lookupAbst name (_ : sr) = lookupAbst name sr
 abstrName :: TypedAbstraction -> String
 abstrName (TAbstraction _ name _ _) = name
 
-data Program
-  = Prog [Abstraction] [Instr]
+data Program a
+  = Prog [Abstraction a] [Instr]
   deriving (Show, Eq)
 
-data Abstraction = Abstraction (Maybe GBufOrShapeDefault) String [(String, Maybe GBufOrShapeDefault)] [Stmt]
+data Abstraction a = Abstraction (Maybe (GBufOrShape a)) String (ArgList a) [Stmt a]
   deriving (Show, Eq)
 
-data Stmt
-  = Mapper (Maybe GBufOrShapeDefault) String [(String, Maybe GBufOrShapeDefault)] Exp
-  | Reducer (Maybe GBufOrShapeDefault) String [(String, Maybe GBufOrShapeDefault)] Exp Exp
-  | Shaper (Maybe GBufOrShapeDefault) String [(String, Maybe GBufOrShapeDefault)] Exp
+type ProgramDefault = Program ShapeVar
+
+type StmtDefault = Stmt ShapeVar
+
+type AbstractionDefault = Abstraction ShapeVar
+
+type ArgList a = [(String, Maybe (GBufOrShape a))]
+
+data Stmt a
+  = Mapper (Maybe (GBufOrShape a)) String (ArgList a) Exp
+  | Reducer (Maybe (GBufOrShape a)) String (ArgList a) Exp Exp
+  | Shaper (Maybe (GBufOrShape a)) String (ArgList a) Exp
   deriving (Show, Eq)
 
 stmt :: forall t. TypedTransform -> (TransformType -> String -> [String] -> t) -> t
@@ -234,13 +311,13 @@ stmtName x = stmt x (\_ name _ -> name)
 maybeGaiwanInt :: (Eq a) => Maybe (GBufOrShape a) -> Bool
 maybeGaiwanInt indexType = fromMaybe (AShape GaiwanInt) indexType == AShape GaiwanInt
 
-toTypedSmtSimple :: Abstraction -> Either String TypedAbstraction
+toTypedSmtSimple :: AbstractionDefault -> Either String TypedAbstraction
 toTypedSmtSimple abs = evalStateT (toTypedSmt abs) 0
 
-toTypedSmt :: Abstraction -> TypeingOut TypedAbstraction
+toTypedSmt :: AbstractionDefault -> TypeingOut TypedAbstraction
 toTypedSmt = toTypedAbst []
 
-toTypedAbst :: EnvType -> Abstraction -> TypeingOut TypedAbstraction
+toTypedAbst :: EnvType -> AbstractionDefault -> TypeingOut TypedAbstraction
 toTypedAbst env (Abstraction outType name args []) = fail "Cannot make abstraction without content"
 toTypedAbst env (Abstraction outType name args parts) = do
   things <- mapM checkAbstrArgs args
@@ -250,12 +327,12 @@ toTypedAbst env (Abstraction outType name args parts) = do
   return $
     TAbstraction (GaiwanArrow (map snd things) typedParts) name (map fst args) partType
 
-checkAbstrArgs :: (String, Maybe GBufOrShapeDefault) -> TypeingOut (String, GShape String)
+checkAbstrArgs :: (String, Maybe GBufOrShapeDefault) -> TypeingOut (String, GShape ShapeVar)
 checkAbstrArgs (name, Nothing) = fail "all the arguments of an abstraction need to be set"
 checkAbstrArgs (name, Just (ABuf _)) = fail "Abstractions can only take scalars, not buffers"
 checkAbstrArgs (name, Just (AShape shape)) = return (name, shape)
 
-toTypedSmtEnv :: EnvType -> Stmt -> TypeingOut TypedTransform
+toTypedSmtEnv :: EnvType -> StmtDefault -> TypeingOut TypedTransform
 toTypedSmtEnv env (Mapper outType name args@[(indexArg, indexType), (dataVarName, Just (AShape dataVarType))] body)
   | maybeGaiwanInt indexType = do
     AShape retType <- typeWithExpection outType ([(indexArg, AShape GaiwanInt), (dataVarName, AShape dataVarType)] ++ env) body
@@ -394,7 +471,7 @@ solveTCnt
 solveTCnt
   (name2, a2, b2) -- overlapping sizes, these 2 should be unified
   (name3, a3, b3) -- -/
-    | name2 == name3 && (b2 == b3) && (a2 == 0 || a3 == 0) && name2 /= "n" -- TODO: FIXME REMOVE
+    | name2 == name3 && b2 == b3 && (a2 == 0 || a3 == 0) && name2 /= "n" -- TODO: FIXME REMOVE
       =
       -- we know that the linear factor must be zero (0*x + b = a₃*x + b ⇒ a₃ = 0)
       do
@@ -532,7 +609,7 @@ checkExpected Nothing b = return b
 checkExpected (Just a) b | a == b = return b
 checkExpected (Just a) b = fail $ "Expected outtype does not match " ++ show a ++ " but got " ++ show b
 
-toShapeList :: [GBufOrShape String] -> TypeingOut [GShape String]
+toShapeList :: [GBufOrShape a] -> TypeingOut [GShape a]
 toShapeList ((AShape a) : r) = (a :) <$> toShapeList r
 toShapeList [] = return []
 toShapeList _ = fail "Not all shape"
@@ -570,12 +647,12 @@ typeOfBody env (If cond tBranch fBrach) = do
 typeOfBody env a@App {} = fail $ "I don't know this applicaion" ++ show a
 typeOfBody env GPUBufferGet {} = fail "Cannot use GPUBufferget in body"
 
-typeOfVar :: EnvType -> Exp -> TypeingOut (GBufOrShape String)
+typeOfVar :: EnvType -> Exp -> TypeingOut (GBufOrShape ShapeVar)
 typeOfVar _ (Var name True) = error "not implemented"
 typeOfVar env (Var name False) = maybe (fail $ name ++ " not in env") return $ lookup name env
 typeOfVar _ _ = fail "trying to typeOfVar on non variable"
 
-typeOfMathBinop :: EnvType -> Exp -> Exp -> TypeingOut (GBufOrShape String)
+typeOfMathBinop :: EnvType -> Exp -> Exp -> TypeingOut GBufOrShapeDefault
 typeOfMathBinop env a b = do
   res <- mapM (typeOfBody env) [a, b]
   case res of
