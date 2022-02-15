@@ -311,8 +311,11 @@ stmtName x = stmt x (\_ name _ -> name)
 maybeGaiwanInt :: (Eq a) => Maybe (GBufOrShape a) -> Bool
 maybeGaiwanInt indexType = fromMaybe (AShape GaiwanInt) indexType == AShape GaiwanInt
 
-toTypedSmtSimple :: AbstractionDefault -> Either String TypedAbstraction
-toTypedSmtSimple abs = evalStateT (toTypedSmt abs) 0
+toTypedSmtSimple :: Abstraction String -> Either String TypedAbstraction
+toTypedSmtSimple abs =
+  (`evalStateT` 0) $ do
+    renamedS <- lol abs
+    toTypedSmt renamedS
 
 toTypedSmt :: AbstractionDefault -> TypeingOut TypedAbstraction
 toTypedSmt = toTypedAbst []

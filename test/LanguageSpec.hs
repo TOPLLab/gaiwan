@@ -284,11 +284,11 @@ spec = do
             "nameOFanAbstraction"
             [("size", Just $ AShape GaiwanInt)]
             [ Mapper Nothing "nameOFaMapper" [("i", Nothing), ("v", Just (AShape GaiwanInt))] (Plus (Var "size" False) v),
-              Mapper Nothing "nameOFaMapper" [("i", Nothing), ("v", Just (AShape (TVar 99999 {-Out-})))] v,
-              Mapper Nothing "nameOFaMapper" [("i", Nothing), ("v", Just (AShape (TVar 99999 {-Out-})))] (Tuple [v, v])
+              Mapper Nothing "nameOFaMapper" [("i", Nothing), ("v", Just (AShape (TVar "Out")))] v,
+              Mapper Nothing "nameOFaMapper" [("i", Nothing), ("v", Just (AShape (TVar "Out")))] (Tuple [v, v])
             ]
         )
-        `shouldBe` Right (TAbstraction (GaiwanArrow [GaiwanInt] (GTransformType M.empty [GaiwanBuf (Var "joinedsize1" False) GaiwanInt] [GaiwanBuf (Var "joinedsize1" False) (GaiwanTuple [GaiwanInt, GaiwanInt])])) "nameOFanAbstraction" ["size"] [TMapper (GTransformType M.empty [GaiwanBuf (Var "n" False) GaiwanInt] [GaiwanBuf (Var "n" False) GaiwanInt]) "nameOFaMapper" ["i", "v"] (Plus (Var "size" False) (Var "v" False)), TMapper (GTransformType M.empty [GaiwanBuf (Var "n" False) (TVar 99999 {-Out-})] [GaiwanBuf (Var "n" False) (TVar 99999 {-Out-})]) "nameOFaMapper" ["i", "v"] (Var "v" False), TMapper (GTransformType M.empty [GaiwanBuf (Var "n" False) (TVar 99999 {-Out-})] [GaiwanBuf (Var "n" False) (GaiwanTuple [TVar 99999 {-Out-}, TVar 99999 {-Out-}])]) "nameOFaMapper" ["i", "v"] (Tuple [Var "v" False, Var "v" False])])
+        `shouldBe` Right (TAbstraction (GaiwanArrow [GaiwanInt] (GTransformType M.empty [GaiwanBuf (Var "joinedsize3" False) GaiwanInt] [GaiwanBuf (Var "joinedsize3" False) (GaiwanTuple [GaiwanInt, GaiwanInt])])) "nameOFanAbstraction" ["size"] [TMapper (GTransformType M.empty [GaiwanBuf (Var "n" False) GaiwanInt] [GaiwanBuf (Var "n" False) GaiwanInt]) "nameOFaMapper" ["i", "v"] (Plus (Var "size" False) (Var "v" False)), TMapper (GTransformType M.empty [GaiwanBuf (Var "n" False) (TVar 0)] [GaiwanBuf (Var "n" False) (TVar 0)]) "nameOFaMapper" ["i", "v"] (Var "v" False), TMapper (GTransformType M.empty [GaiwanBuf (Var "n" False) (TVar 1)] [GaiwanBuf (Var "n" False) (GaiwanTuple [TVar 1, TVar 1])]) "nameOFaMapper" ["i", "v"] (Tuple [Var "v" False, Var "v" False])])
 
     it "types a two mapper in an abstraction with var" $
       toTypedSmtSimple
@@ -297,19 +297,19 @@ spec = do
             "nameOFanAbstraction"
             [("size", Just (AShape GaiwanInt))]
             [ Shaper
-                (Just (ABuf (GaiwanBuf n (GaiwanTuple [TVar 99999 {-A-}, TVar 99999 {-A-}]))))
+                (Just (ABuf (GaiwanBuf n (GaiwanTuple [TVar "A", TVar "A"]))))
                 "nameOFaMapper"
                 [ ("i", Nothing),
-                  ("v", Just (ABuf (GaiwanBuf (Times (Int 2) n) (TVar 99999 {-A-}))))
+                  ("v", Just (ABuf (GaiwanBuf (Times (Int 2) n) (TVar "A"))))
                 ]
                 $ Tuple
                   [ ArrayGet v (Times (Int 2) (Var "i" False)),
                     ArrayGet v (Plus (Int 1) (Times (Int 2) (Var "i" False)))
                   ],
               Shaper
-                (Just (ABuf (GaiwanBuf n (GaiwanTuple [TVar 99999 {-B-}, TVar 99999 {-B-}]))))
+                (Just (ABuf (GaiwanBuf n (GaiwanTuple [TVar "B", TVar "B"]))))
                 "nameOFaMapper"
-                [("i", Nothing), ("v", Just (ABuf (GaiwanBuf (Plus (Times (Int 2) n) (Int 1)) (TVar 99999 {-B-}))))]
+                [("i", Nothing), ("v", Just (ABuf (GaiwanBuf (Plus (Times (Int 2) n) (Int 1)) (TVar "B"))))]
                 $ Tuple
                   [ ArrayGet v (Times (Int 2) (Var "i" False)),
                     ArrayGet v (Plus (Int 1) (Times (Int 2) (Var "i" False)))
@@ -323,8 +323,7 @@ spec = do
                 (Plus (Select (Select v 1) 1) (Select (Select v 1) 0))
             ]
         )
-        `shouldBe` Right (TAbstraction (GaiwanArrow [GaiwanInt] (GTransformType M.empty [GaiwanBuf (Plus (Times (Int 4) (Var "joinedsize1" False)) (Int 2)) GaiwanInt] [GaiwanBuf (Var "joinedsize1" False) GaiwanInt])) "nameOFanAbstraction" ["size"] [TShaper (GTransformType M.empty [GaiwanBuf (Times (Int 2) (Var "n" False)) (TVar 99999 {-A-})] [GaiwanBuf (Var "n" False) (GaiwanTuple [TVar 99999 {-A-}, TVar 99999 {-A-}])]) "nameOFaMapper" ["i", "v"] (Tuple [ArrayGet (Var "v" False) (Times (Int 2) (Var "i" False)), ArrayGet (Var "v" False) (Plus (Int 1) (Times (Int 2) (Var "i" False)))]), TShaper (GTransformType M.empty [GaiwanBuf (Plus (Times (Int 2) (Var "n" False)) (Int 1)) (TVar 99999 {-B-})] [GaiwanBuf (Var "n" False) (GaiwanTuple [TVar 99999 {-B-}, TVar 99999 {-B-}])]) "nameOFaMapper" ["i", "v"] (Tuple [ArrayGet (Var "v" False) (Times (Int 2) (Var "i" False)), ArrayGet (Var "v" False) (Plus (Int 1) (Times (Int 2) (Var "i" False)))]), TMapper (GTransformType M.empty [GaiwanBuf (Var "n" False) (GaiwanTuple [GaiwanTuple [GaiwanInt, GaiwanInt], GaiwanTuple [GaiwanInt, GaiwanInt]])] [GaiwanBuf (Var "n" False) GaiwanInt]) "nameOFaMapper" ["i", "v"] (Plus (Select (Select (Var "v" False) 1) 1) (Select (Select (Var "v" False) 1) 0))])
-
+        `shouldBe` Right (TAbstraction (GaiwanArrow [GaiwanInt] (GTransformType M.empty [GaiwanBuf (Plus (Times (Int 4) (Var "joinedsize3" False)) (Int 2)) GaiwanInt] [GaiwanBuf (Var "joinedsize3" False) GaiwanInt])) "nameOFanAbstraction" ["size"] [TShaper (GTransformType M.empty [GaiwanBuf (Times (Int 2) (Var "n" False)) (TVar 0)] [GaiwanBuf (Var "n" False) (GaiwanTuple [TVar 0, TVar 0])]) "nameOFaMapper" ["i", "v"] (Tuple [ArrayGet (Var "v" False) (Times (Int 2) (Var "i" False)), ArrayGet (Var "v" False) (Plus (Int 1) (Times (Int 2) (Var "i" False)))]), TShaper (GTransformType M.empty [GaiwanBuf (Plus (Times (Int 2) (Var "n" False)) (Int 1)) (TVar 1)] [GaiwanBuf (Var "n" False) (GaiwanTuple [TVar 1, TVar 1])]) "nameOFaMapper" ["i", "v"] (Tuple [ArrayGet (Var "v" False) (Times (Int 2) (Var "i" False)), ArrayGet (Var "v" False) (Plus (Int 1) (Times (Int 2) (Var "i" False)))]), TMapper (GTransformType M.empty [GaiwanBuf (Var "n" False) (GaiwanTuple [GaiwanTuple [GaiwanInt, GaiwanInt], GaiwanTuple [GaiwanInt, GaiwanInt]])] [GaiwanBuf (Var "n" False) GaiwanInt]) "nameOFaMapper" ["i", "v"] (Plus (Select (Select (Var "v" False) 1) 1) (Select (Select (Var "v" False) 1) 0))])
   describe "Language.Gaiwan simple LetB Return" $ do
     let prog = Prog [] [LetB "k" [IApp "fresh" True [Int 33554432]] [Return ["k", "unbound"]]]
     it "does not parse garbage" $
