@@ -133,74 +133,77 @@ data TypedProgram = TypedProg TransformType [TypedInstr]
 checkDefsType :: Program String -> Either String [TypedAbstraction]
 checkDefsType (Prog s e) =
   (`evalStateT` 0) $ do
-    renamedS <- mapM lol s
+    renamedS <- mapM alphaRenameShape s
     mapM toTypedSmt renamedS
 
 checkType :: Program String -> Either String TypedProgram
 checkType (Prog s e) = (`evalStateT` 0) $ do
-  renamedS <- mapM lol s
+  renamedS <- mapM alphaRenameShape s
   typedStmts <- mapM toTypedSmt renamedS -- type the definitions
   typedInstrs <- mapM (toTypedInstr typedStmts []) e -- apply the types of the definitions to the instrucions of the coordination language
   resultType <- mergeTList (map typedInstr typedInstrs)
   return $ TypedProg resultType typedInstrs
 
-lol :: Abstraction String -> TypeingOut AbstractionDefault
-lol (Abstraction m_gbos name args steps) = do
-  steps' <- mapM (lol5 M.empty) steps
-  lt <- expandLOLLT M.empty args
-  m_gbos' <- applyLOLLT lt m_gbos
-  args' <- mapM (applyLOLLTM lt) args
-  return $ Abstraction m_gbos' name args' (map fst steps')
+alphaRenameShape :: Abstraction String -> TypeingOut AbstractionDefault
+alphaRenameShape (Abstraction m_gbos name args steps) = do
+  steps' <- mapM doAlphaRename steps
+  lt <- createAlphaLT args
+  m_gbos' <- applyAphaLTMaybe lt m_gbos
+  args' <- mapM (applyAphaLTArg lt) args
+  return $ Abstraction m_gbos' name args' steps'
+  where
+    doAlphaRename :: Stmt String -> TypeingOut (Stmt ShapeVar)
+    doAlphaRename (Mapper m_gbos str x0 exp) = do
+      lt' <- createAlphaLT x0
+      m_gbos' <- applyAphaLTMaybe lt' m_gbos
+      x0' <- mapM (applyAphaLTArg lt') x0
+      return $ Mapper m_gbos' str x0' exp
+    doAlphaRename (Reducer m_gbos str x0 exp exp') = do
+      lt' <- createAlphaLT x0
+      m_gbos' <- applyAphaLTMaybe lt' m_gbos
+      x0' <- mapM (applyAphaLTArg lt') x0
+      return $ Reducer m_gbos' str x0' exp exp'
+    doAlphaRename (Shaper m_gbos str x0 exp) = do
+      lt' <- createAlphaLT x0
+      m_gbos' <- applyAphaLTMaybe lt' m_gbos
+      x0' <- mapM (applyAphaLTArg lt') x0
+      return $ Shaper m_gbos' str x0' exp
 
-lol5 :: M.Map String ShapeVar -> Stmt String -> TypeingOut (Stmt ShapeVar, M.Map String ShapeVar)
-lol5 lt (Mapper m_gbos str x0 exp) = do
-  lt' <- expandLOLLT lt x0
-  m_gbos' <- applyLOLLT lt' m_gbos
-  x0' <- mapM (applyLOLLTM lt') x0
-  return (Mapper m_gbos' str x0' exp, lt')
-lol5 lt (Reducer m_gbos str x0 exp exp') = do
-  lt' <- expandLOLLT lt x0
-  m_gbos' <- applyLOLLT lt' m_gbos
-  x0' <- mapM (applyLOLLTM lt') x0
-  return (Reducer m_gbos' str x0' exp exp', lt')
-lol5 lt (Shaper m_gbos str x0 exp) = do
-  lt' <- expandLOLLT lt x0
-  m_gbos' <- applyLOLLT lt' m_gbos
-  x0' <- mapM (applyLOLLTM lt') x0
-  return (Shaper m_gbos' str x0' exp, lt')
+    applyAphaLTArg :: M.Map String ShapeVar -> (String, Maybe (GBufOrShape String)) -> TypeingOut (String, Maybe (GBufOrShape ShapeVar))
+    applyAphaLTArg lt (name, ty) = do
+      v <- applyAphaLTMaybe lt ty
+      return (name, v)
 
-applyLOLLT :: M.Map String ShapeVar -> Maybe (GBufOrShape String) -> TypeingOut (Maybe (GBufOrShape ShapeVar))
-applyLOLLT lt Nothing = return Nothing
-applyLOLLT lt (Just (ABuf (GaiwanBuf exp gs))) = applyLOLLTS lt gs <&> (Just . ABuf . GaiwanBuf exp)
-applyLOLLT lt (Just (AShape gs)) = applyLOLLTS lt gs <&> (Just . AShape)
+    applyAphaLTMaybe :: M.Map String ShapeVar -> Maybe (GBufOrShape String) -> TypeingOut (Maybe (GBufOrShape ShapeVar))
+    applyAphaLTMaybe lt Nothing = return Nothing
+    applyAphaLTMaybe lt (Just (ABuf (GaiwanBuf exp gs))) = applyAphaLT lt gs <&> (Just . ABuf . GaiwanBuf exp)
+    applyAphaLTMaybe lt (Just (AShape gs)) = applyAphaLT lt gs <&> (Just . AShape)
 
-applyLOLLTS :: M.Map String ShapeVar -> GShape String -> TypeingOut (GShape ShapeVar)
-applyLOLLTS lt GaiwanInt = return GaiwanInt
-applyLOLLTS lt (GaiwanTuple gss) = mapM (applyLOLLTS lt) gss <&> GaiwanTuple
-applyLOLLTS lt (TVar a) = maybe (fail $ "Could not find " ++ a ++ " in applyLOLLTS " ++ (show lt)) (return . TVar) (M.lookup a lt)
+    applyAphaLT :: M.Map String ShapeVar -> GShape String -> TypeingOut (GShape ShapeVar)
+    applyAphaLT lt GaiwanInt = return GaiwanInt
+    applyAphaLT lt (GaiwanTuple gss) = mapM (applyAphaLT lt) gss <&> GaiwanTuple
+    applyAphaLT lt (TVar a) = maybe (fail $ "Could not find " ++ a ++ " in applyAphaLT " ++ (show lt)) (return . TVar) (M.lookup a lt)
 
-applyLOLLTM :: M.Map String ShapeVar -> (String, Maybe (GBufOrShape String)) -> TypeingOut (String, Maybe (GBufOrShape ShapeVar))
-applyLOLLTM lt (name, ty) = do
-  v <- applyLOLLT lt ty
-  return (name, v)
+    createAlphaLT = growAlphaLT M.empty
 
-expandLOLLT :: M.Map String ShapeVar -> ArgList String -> TypeingOut (M.Map String ShapeVar)
-expandLOLLT lt [] = return lt
-expandLOLLT lt ((s, Nothing) : xr) = expandLOLLT lt xr
-expandLOLLT lt ((s, Just (ABuf (GaiwanBuf exp gs))) : xr) = do
-  lt' <- expandSingel lt gs
-  expandLOLLT lt' xr
-expandLOLLT lt ((s, Just (AShape gs)) : xr) = do
-  lt' <- expandSingel lt gs
-  expandLOLLT lt' xr
+    growAlphaLT :: M.Map String ShapeVar -> ArgList String -> TypeingOut (M.Map String ShapeVar)
+    growAlphaLT lt [] = return lt
+    growAlphaLT lt ((s, Nothing) : xr) = growAlphaLT lt xr
+    growAlphaLT lt ((s, Just bufOrShape) : xr) = do
+      lt' <- growLTSingle (collectShape bufOrShape) lt
+      growAlphaLT lt' xr
 
-expandSingel :: M.Map String ShapeVar -> GShape String -> TypeingOut (M.Map String ShapeVar)
-expandSingel lt GaiwanInt = return lt
-expandSingel lt (GaiwanTuple gss) = foldrM (flip expandSingel) lt gss
-expandSingel lt (TVar str) | M.member str lt = return lt
-expandSingel lt (TVar str) = do
-  newName <- nextUniqv
-  return $ M.insert str newName lt
+    collectShape :: GBufOrShape a -> GShape a
+    collectShape (ABuf (GaiwanBuf _ gs)) = gs
+    collectShape (AShape gs) = gs
+
+    growLTSingle :: (Ord s) => GShape s -> M.Map s ShapeVar -> TypeingOut (M.Map s ShapeVar)
+    growLTSingle GaiwanInt lt = return lt
+    growLTSingle (GaiwanTuple gss) lt = foldrM growLTSingle lt gss
+    growLTSingle (TVar str) lt | M.member str lt = return lt
+    growLTSingle (TVar str) lt = do
+      newName <- nextUniqv
+      return $ M.insert str newName lt
 
 nextUniqv :: TypeingOut Int
 nextUniqv = do
@@ -314,7 +317,7 @@ maybeGaiwanInt indexType = fromMaybe (AShape GaiwanInt) indexType == AShape Gaiw
 toTypedSmtSimple :: Abstraction String -> Either String TypedAbstraction
 toTypedSmtSimple abs =
   (`evalStateT` 0) $ do
-    renamedS <- lol abs
+    renamedS <- alphaRenameShape abs
     toTypedSmt renamedS
 
 toTypedSmt :: AbstractionDefault -> TypeingOut TypedAbstraction
