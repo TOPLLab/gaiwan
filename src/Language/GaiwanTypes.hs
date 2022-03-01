@@ -19,6 +19,7 @@ module Language.GaiwanTypes
     GBufOrShapeDefault,
     StmtShape,
     GaiwanBuf (..),
+    GaiwanBufSize (..),
     stmtName,
     toTypedSmtSimple,
     --    stmt,
@@ -44,8 +45,11 @@ data Void -- needed for var free types
 data GAbsType a = GaiwanArrow [GShape a] (GTransformType a)
   deriving (Show, Eq)
 
+data GaiwanBufSize a = GaiwanBufSize a Int Int
+  deriving (Show, Eq)
+
 -- Type of a buffer
-data GaiwanBuf a = GaiwanBuf Exp (GShape a)
+data GaiwanBuf a = GaiwanBuf (GaiwanBufSize a) (GShape a)
   deriving (Show, Eq)
 
 type GaiwanBufDefault = GaiwanBuf ShapeVar
@@ -87,6 +91,20 @@ instance MonadFail (Either String) where
 
 class Eq a => Tagable a where
   untagify :: Tag a -> a
+
+class Eq a => Freshable a where
+  fresh :: TypeingOut a
+
+instance Freshable ShapeVar where
+  fresh = nextUniqv
+
+instance (Eq a, Freshable a) => Freshable (GaiwanBufSize a) where
+  fresh = do
+    varName <- fresh
+    return $ GaiwanBufSize varName 1 0
+
+instance (Eq a, Freshable a) => Freshable (GShape a) where
+  fresh = TVar <$> fresh
 
 instance Tagable String where
   untagify (tag, name) = name ++ "@" ++ show tag
@@ -144,22 +162,19 @@ checkType (Prog s e) = (`evalStateT` 0) $ do
   resultType <- mergeTList (map typedInstr typedInstrs)
   return $ TypedProg resultType typedInstrs
 
-
-
 alphaRenameAbstType :: AbstType -> TypeingOut AbstType
-alphaRenameAbstType (GaiwanArrow gss (GTransformType map gbs1 gbs2))
-  = do
-      lt <- growAlphaLT2 M.empty  gbs1
-      gss' <- mapM (applyAphaLT lt) gss
-      gbs1' <- mapM (applyAphaLT2 lt) gbs1
-      gbs2' <- mapM (applyAphaLT2 lt) gbs2
-      return (GaiwanArrow gss' (GTransformType map gbs1' gbs2'))
+alphaRenameAbstType (GaiwanArrow gss (GTransformType map gbs1 gbs2)) =
+  do
+    lt <- growAlphaLT2 M.empty gbs1
+    gss' <- mapM (applyAphaLT lt) gss
+    gbs1' <- mapM (applyAphaLT2 lt) gbs1
+    gbs2' <- mapM (applyAphaLT2 lt) gbs2
+    return (GaiwanArrow gss' (GTransformType map gbs1' gbs2'))
 
 applyAphaLT2 :: M.Map ShapeVar ShapeVar -> GaiwanBuf ShapeVar -> TypeingOut (GaiwanBuf ShapeVar)
 applyAphaLT2 lt (GaiwanBuf exp gs) = do
-    gs' <- applyAphaLT lt gs
-    return (GaiwanBuf exp gs')
-
+  gs' <- applyAphaLT lt gs
+  return (GaiwanBuf exp gs')
 
 growAlphaLT2 :: M.Map ShapeVar ShapeVar -> [GaiwanBuf ShapeVar] -> TypeingOut (M.Map ShapeVar ShapeVar)
 growAlphaLT2 lt [] = return lt
@@ -170,7 +185,7 @@ growAlphaLT2 lt ((GaiwanBuf exp gs) : xr) = do
 -- | Apply alpha renaming to a shape
 -- This will be used storing the value in the TypeingOut monad
 -- This will ensure that every time the value is obtained, it is renamed
-alphaRenameShape :: (Ord s, Show s) =>  Abstraction s -> TypeingOut AbstractionDefault
+alphaRenameShape :: (Ord s, Show s) => Abstraction s -> TypeingOut AbstractionDefault
 alphaRenameShape (Abstraction m_gbos name args steps) = do
   steps' <- mapM doAlphaRename steps
   lt <- createAlphaLT args
@@ -178,7 +193,7 @@ alphaRenameShape (Abstraction m_gbos name args steps) = do
   args' <- mapM (applyAphaLTArg lt) args
   return $ Abstraction m_gbos' name args' steps'
 
-doAlphaRename :: (Ord s, Show s)=> Stmt s -> TypeingOut (Stmt ShapeVar)
+doAlphaRename :: (Ord s, Show s) => Stmt s -> TypeingOut (Stmt ShapeVar)
 doAlphaRename (Mapper m_gbos str x0 exp) = do
   lt' <- createAlphaLT x0
   m_gbos' <- applyAphaLTMaybe lt' m_gbos
@@ -195,34 +210,64 @@ doAlphaRename (Shaper m_gbos str x0 exp) = do
   x0' <- mapM (applyAphaLTArg lt') x0
   return $ Shaper m_gbos' str x0' exp
 
-applyAphaLTArg :: (Ord s, Show s) => M.Map s ShapeVar -> (String, Maybe (GBufOrShape s)) -> TypeingOut (String, Maybe (GBufOrShape ShapeVar))
-applyAphaLTArg lt (name, ty) = do
-  v <- applyAphaLTMaybe lt ty
+applyAphaLTArg :: (Ord s, Show s) => (M.Map s ShapeVar, M.Map s ShapeVar) -> (String, Maybe (GBufOrShape s)) -> TypeingOut (String, Maybe (GBufOrShape ShapeVar))
+applyAphaLTArg (lt, ltS) (name, ty) = do
+  v <- applyAphaLTMaybe (lt, ltS) ty
   return (name, v)
 
-applyAphaLTMaybe :: (Ord s, Show s) => M.Map s ShapeVar -> Maybe (GBufOrShape s) -> TypeingOut (Maybe (GBufOrShape ShapeVar))
-applyAphaLTMaybe lt Nothing = return Nothing
-applyAphaLTMaybe lt (Just (ABuf (GaiwanBuf exp gs))) = applyAphaLT lt gs <&> Just . ABuf . GaiwanBuf exp
-applyAphaLTMaybe lt (Just (AShape gs)) = applyAphaLT lt gs <&> Just . AShape
+applyAphaLTMaybe :: (Ord s, Show s) => (M.Map s ShapeVar, M.Map s ShapeVar) -> Maybe (GBufOrShape s) -> TypeingOut (Maybe (GBufOrShape ShapeVar))
+applyAphaLTMaybe (lt, ltS) Nothing = return Nothing
+applyAphaLTMaybe (lt, ltS) (Just (ABuf (GaiwanBuf exp gs))) = do
+  renamedShape <- applyAphaLT lt gs
+  renamedSize <- applyAphaLTS ltS exp
+  return $ Just $ ABuf (GaiwanBuf renamedSize renamedShape)
+applyAphaLTMaybe (lt, ltS) (Just (AShape gs)) = applyAphaLT lt gs <&> Just . AShape
+
+applyAphaLTS :: (Ord s, Show s) => M.Map s ShapeVar -> GaiwanBufSize s -> TypeingOut (GaiwanBufSize ShapeVar)
+applyAphaLTS lt (GaiwanBufSize varName 0 intercept) = do
+  maybe
+    ( do
+        nn <- fresh
+        return $ GaiwanBufSize nn 0 intercept
+    )
+    (\nn -> return $ GaiwanBufSize nn 0 intercept)
+    (M.lookup varName lt)
+applyAphaLTS lt (GaiwanBufSize varName slope intercept) =
+  maybe
+    (fail $ "Could not find " ++ show varName ++ " in applyAphaLTS " ++ show lt)
+    (\nn -> return $ GaiwanBufSize nn slope intercept)
+    (M.lookup varName lt)
 
 applyAphaLT :: (Ord s, Show s) => M.Map s ShapeVar -> GShape s -> TypeingOut (GShape ShapeVar)
 applyAphaLT lt GaiwanInt = return GaiwanInt
 applyAphaLT lt (GaiwanTuple gss) = mapM (applyAphaLT lt) gss <&> GaiwanTuple
 applyAphaLT lt (TVar a) = maybe (fail $ "Could not find " ++ show a ++ " in applyAphaLT " ++ show lt) (return . TVar) (M.lookup a lt)
 
-createAlphaLT :: (Ord s) => ArgList s -> TypeingOut (M.Map s ShapeVar)
-createAlphaLT = growAlphaLT M.empty
+createAlphaLT :: (Ord s) => ArgList s -> TypeingOut (M.Map s ShapeVar, M.Map s ShapeVar)
+createAlphaLT = growAlphaLT M.empty M.empty
 
-growAlphaLT :: (Ord s) => M.Map s ShapeVar -> ArgList s -> TypeingOut (M.Map s ShapeVar)
-growAlphaLT lt [] = return lt
-growAlphaLT lt ((s, Nothing) : xr) = growAlphaLT lt xr
-growAlphaLT lt ((s, Just bufOrShape) : xr) = do
+growAlphaLT :: (Ord s) => M.Map s ShapeVar -> M.Map s ShapeVar -> ArgList s -> TypeingOut (M.Map s ShapeVar, M.Map s ShapeVar)
+growAlphaLT lt ltS [] = return (lt, ltS)
+growAlphaLT lt ltS ((s, Nothing) : xr) = growAlphaLT lt ltS xr
+growAlphaLT lt ltS ((s, Just bufOrShape) : xr) = do
   lt' <- growLTSingle (collectShape bufOrShape) lt
-  growAlphaLT lt' xr
+  ltS' <- growLTSingleVar (collectSizeVar bufOrShape) ltS
+  growAlphaLT lt' ltS' xr
+
+growLTSingleVar :: (Ord s) => Maybe s -> M.Map s ShapeVar -> TypeingOut (M.Map s ShapeVar)
+growLTSingleVar Nothing ltS = return ltS
+growLTSingleVar (Just v) ltS | M.member v ltS = return ltS
+growLTSingleVar (Just v) ltS = do
+  newName <- fresh
+  return $ M.insert v newName ltS
 
 collectShape :: GBufOrShape a -> GShape a
 collectShape (ABuf (GaiwanBuf _ gs)) = gs
 collectShape (AShape gs) = gs
+
+collectSizeVar :: GBufOrShape a -> Maybe a
+collectSizeVar (ABuf (GaiwanBuf (GaiwanBufSize name _ _) _)) = Just name
+collectSizeVar (AShape gs) = Nothing
 
 growLTSingle :: (Ord s) => GShape s -> M.Map s ShapeVar -> TypeingOut (M.Map s ShapeVar)
 growLTSingle GaiwanInt lt = return lt
@@ -240,11 +285,12 @@ nextUniqv = do
 
 nextUniqvBuf :: TypeingOut (GaiwanBuf ShapeVar)
 nextUniqvBuf = do
-  uniqv_len <- nextUniqv
-  GaiwanBuf (Var ("freshlen_" ++ show uniqv_len) False) . TVar <$> nextUniqv
+  linSize <- fresh
+  GaiwanBuf linSize <$> fresh
 
 toTypedInstr :: [TypedAbstraction] -> EnvType -> Instr -> TypeingOut TypedInstr
 toTypedInstr definitions env (Return names) = do
+  -- TODO what the same buffer is returned twice?
   outTypes <- mapM (const nextUniqvBuf) names
   return $ TRetrun (GTransformType (M.fromList (zip names outTypes)) [] outTypes) names
 toTypedInstr definitions env (LetB name wl1 wl2) = do
@@ -256,7 +302,8 @@ toTypedInstr definitions env (LetB name wl1 wl2) = do
   return (TLetB tout name twl1b twl2b)
 toTypedInstr definitions env (IApp "fresh" True [Int cnt]) = do
   -- special shaper
-  let outType = GTransformType M.empty [] [GaiwanBuf (Int cnt) GaiwanInt]
+  varName <- fresh
+  let outType = GTransformType M.empty [] [GaiwanBuf (GaiwanBufSize varName 0 cnt) GaiwanInt]
   return $ TIApp outType (TAbstraction (GaiwanArrow [] outType) "fresh" [] [TShaper outType "fresh" ["i"] (Var "i" False)]) []
 toTypedInstr definitions env a@(IApp name True args) = fail $ "error: built in funtions not supported yet" ++ show a --TODO
 toTypedInstr definitions env (IApp name False args) = do
@@ -273,7 +320,6 @@ toTypedInstr definitions env (Loop count varname childs) = do
   return $ TLoop looptype count varname body
 
 -- | Check if the args are compatible with the statment and return the type of the application
-
 japply :: String -> TransformType -> TransformType -> TypeingOut TransformType
 japply name (GTransformType c1 [] [t1]) (GTransformType c2 [] t2) = do
   (newc, newt) <- constraintUnion (M.insert name t1 c1) c2 t2
@@ -283,7 +329,7 @@ japply _ _ _ = fail "Cannot japply with funciton as first argument"
 -- | Unify constrains in args
 -- @c1@ and @c2@ will be unified and the resulting changes will also be applied to @outtype@
 -- Rerurns the new constrains and the new outtype
-constraintUnion :: Tagable a => Constraints a -> Constraints a -> [GaiwanBuf a] -> TypeingOut (Constraints a, [GaiwanBuf a])
+constraintUnion :: (Show a, Freshable a, Tagable a) => Constraints a -> Constraints a -> [GaiwanBuf a] -> TypeingOut (Constraints a, [GaiwanBuf a])
 constraintUnion c1 c2 outtype = do
   let overlap = M.keys c1 `L.intersect` M.keys c2
   c1vals <- maybe (fail "err") return $ mapM (`M.lookup` c1) overlap
@@ -371,12 +417,13 @@ toTypedSmtEnv :: EnvType -> StmtDefault -> TypeingOut TypedTransform
 toTypedSmtEnv env (Mapper outType name args@[(indexArg, indexType), (dataVarName, Just (AShape dataVarType))] body)
   | maybeGaiwanInt indexType = do
     AShape retType <- typeWithExpection outType ([(indexArg, AShape GaiwanInt), (dataVarName, AShape dataVarType)] ++ env) body
+    linBufSize <- fresh
     return $
       TMapper
         ( GTransformType
             M.empty
-            [GaiwanBuf (Var "n" False) dataVarType]
-            [GaiwanBuf (Var "n" False) retType]
+            [GaiwanBuf linBufSize dataVarType]
+            [GaiwanBuf linBufSize retType]
         )
         name
         (map fst args)
@@ -406,9 +453,10 @@ toTypedSmtEnv env (Reducer outType name args@[(indexArg, indexType), (accArg, ac
         ( [(indexArg, Just $ AShape GaiwanInt), (accArg, Just $ AShape checkecAccType), (dataArg, dataType)] ++ map (second Just) env
         )
         body
+    varName <- fresh
     return $
       TReducer
-        (GTransformType M.empty [GaiwanBuf (Var "n" False) checkecAccType] [GaiwanBuf (Int 1) checkedOutType])
+        (GTransformType M.empty [GaiwanBuf (GaiwanBufSize varName 1 0) checkecAccType] [GaiwanBuf (GaiwanBufSize varName 0 1) checkedOutType])
         name
         (map fst args)
         initExp
@@ -423,18 +471,18 @@ mergeTList (a : ar) = mergeTList ar >>= mergeT a
 mergeTList [] = fail "empty merge"
 
 -- | merge two tranformationTypes like function composition (and adjust buffer sizes if needed)
-mergeT :: Tagable a => GTransformType a -> GTransformType a -> TypeingOut (GTransformType a)
+mergeT :: (Tagable a, Show a, Freshable a) => GTransformType a -> GTransformType a -> TypeingOut (GTransformType a)
 mergeT t1 t2 =
   unrename <$> mergeTTaged (rename 1 t1) (rename 2 t2)
 
-mergeTTaged :: Tagable a => GTransformType (Tag a) -> GTransformType (Tag a) -> TypeingOut (GTransformType (Tag a))
+mergeTTaged :: (Tagable a, Show a, Freshable a) => GTransformType (Tag a) -> GTransformType (Tag a) -> TypeingOut (GTransformType (Tag a))
 mergeTTaged ty1@(GTransformType c1 from1 to1) ty2@(GTransformType c2 from2 to2) | M.null c2 = do
   theC <- constraints to1 from2
   -- apply the solution of the merge of the type vars and then adjust buffersizes
   joinT (applym theC ty1) (applym theC ty2)
 mergeTTaged _ _ = fail "cannot merge with constraint on the right"
 
-joinT :: Tagable a => GTransformType (Tag a) -> GTransformType (Tag a) -> TypeingOut (GTransformType (Tag a))
+joinT :: (Tagable a, Show a, Freshable a) => GTransformType (Tag a) -> GTransformType (Tag a) -> TypeingOut (GTransformType (Tag a))
 joinT (GTransformType c1 from1 to1) (GTransformType c2 from2 to2)
   | null c2 && length to1 == length from2 =
     joinT1
@@ -448,7 +496,7 @@ data RecordType a = RecordType
     toMatch :: [GaiwanBuf a]
   }
 
-joinT1 :: RecordType a -> RecordType a -> TypeingOut (GTransformType a)
+joinT1 :: (Freshable a, Show a, Eq a) => RecordType (Tag a) -> RecordType (Tag a) -> TypeingOut (GTransformType (Tag a))
 joinT1
   RecordType {toAdjustC = mc1, toAdjustB = from1, toMatch = to1}
   RecordType {toAdjustC = mc2, toAdjustB = to2, toMatch = from2} | M.null mc2 = do
@@ -463,22 +511,23 @@ joinT1
     let c1new = zip (map fst c1) (zipWith reJoin (map snd c1) cTypesOut) -- TODO check
     return (GTransformType (M.fromAscList c1new) (zipWith reJoin from1 fFrom) (zipWith reJoin to2 fTo))
     where
-      reJoin :: GaiwanBuf a -> (String, Int, Int) -> GaiwanBuf a
+      reJoin :: GaiwanBuf a -> (a, Int, Int) -> GaiwanBuf a
       reJoin (GaiwanBuf exp gs) newSize = GaiwanBuf (denorm newSize) gs
 joinT1 _ _ = fail "mc2 was non empty"
 
 joinT2 ::
+  (Freshable a, Eq a, Show a) =>
   -- |  constraint acc
-  [(String, Int, Int)] ->
+  [(Tag a, Int, Int)] ->
   -- | from acc
-  [(String, Int, Int)] ->
+  [(Tag a, Int, Int)] ->
   -- | from todo
-  [(String, Int, Int)] ->
+  [(Tag a, Int, Int)] ->
   -- | to todo
-  [(String, Int, Int)] ->
+  [(Tag a, Int, Int)] ->
   -- | to acc
-  [(String, Int, Int)] ->
-  TypeingOut ([(String, Int, Int)], [(String, Int, Int)], [(String, Int, Int)])
+  [(Tag a, Int, Int)] ->
+  TypeingOut ([(Tag a, Int, Int)], [(Tag a, Int, Int)], [(Tag a, Int, Int)])
 joinT2 c f [] [] t = return (c, f, t)
 joinT2 c f (l1 : lr) (r1 : rr) t = do
   (l, r) <- solveTCnt l1 r1
@@ -492,66 +541,67 @@ joinT2 _ f _ _ t = fail "incompatible number of buffers"
 
 -- | solve
 solveTCnt ::
-  (String, Int, Int) ->
-  (String, Int, Int) ->
+  (Freshable a, Eq a, Show a) =>
+  (Tag a, Int, Int) ->
+  (Tag a, Int, Int) ->
   TypeingOut
-    ( Bool -> (String, Int, Int) -> TypeingOut (String, Int, Int),
-      Bool -> (String, Int, Int) -> TypeingOut (String, Int, Int) -- (Sizes of the inputs, sizes of the output)
+    ( Bool -> (Tag a, Int, Int) -> TypeingOut (Tag a, Int, Int),
+      Bool -> (Tag a, Int, Int) -> TypeingOut (Tag a, Int, Int) -- (Sizes of the inputs, sizes of the output)
     )
 solveTCnt
   (name2, a2, b2) -- overlapping sizes, these 2 should be unified
   (name3, a3, b3) -- -/
-    | name2 == name3 && a2 == a3 && b2 == b3 && name2 /= "n" =
+    | name2 == name3 && a2 == a3 && b2 == b3 =
       return (const return, const return) -- basically id
 solveTCnt
-  (name2, a2, b2) -- overlapping sizes, these 2 should be unified
+  (name2, a2, b2) -- overlapping sizes, these 2 should be unified TODO improve docs FIXME CHECK THIS !!!!
   (name3, a3, b3) -- -/
-    | name2 == name3 && b2 == b3 && (a2 == 0 || a3 == 0) && name2 /= "n" -- TODO: FIXME REMOVE
-      =
+    | b2 == b3 && (a2 == 0 || a3 == 0) =
       -- we know that the linear factor must be zero (0*x + b = a₃*x + b ⇒ a₃ = 0)
       do
-        uniqv <- nextUniqv
+        uniqv <- fresh
         let zeroTransformer = \assertName (name1, a1, b1) ->
               if name1 == name2 || a1 == 0
-                then return ("joinedsize" ++ show uniqv, 0, b1)
+                then return ((3, uniqv), 0, b1)
                 else return (name1, a1, b1) -- leave unchanged
         return (zeroTransformer, zeroTransformer)
 solveTCnt
-  (name2, a2, b2) -- overlapping sizes, these 2 should be unified
+  (name2, a2, b2) -- overlapping sizes, these 2 should be unified TODO improve docs
   (name3, a3, b3) -- -/
-    | name2 == name3 && name2 /= "n" -- TODO: FIXME REMOVE
-      =
+    | name2 == name3 =
       fail $ "oh no " ++ show ((name2, a2, b2), (name3, a3, b3))
+solveTCnt
+  (name2, a2, b2) -- RHS is constant
+  (name3, 0, b3) = fail $ show ((name2, a2, b2), (name3, 0, b3))
 solveTCnt
   (name2, a2, b2) -- overlapping sizes, these 2 should be unified
   (name3, a3, b3) -- -/
     =
     do
       -- Solve modulo operation to find value for v
-      uniqv <- nextUniqv
+      uniqv <- fresh
 
       v <-
         if b2 == b3
           then return 0
           else
             maybe
-              (fail $ "Could not unify" ++ show (a2, b3 - b2, a3) ++ show (map (\v -> (a2 * v - (b3 - b2)) `mod` a3 == 0) [0 .. (abs a3)]))
+              (fail $ "Could not unify" ++ show (a2, b3 - b2, a3))
               return
               $ find (\v -> (a2 * v - (b3 - b2)) `mod` a3 == 0) [0 .. (abs a3)]
       let leftTransformer = \assertName (name1, a1, b1) ->
             if name1 == name2 || a1 == 0
-              then return ("joinedsize" ++ show uniqv, a1 * u, b1 + a1 * v)
+              then return ((3, uniqv), a1 * u, b1 + a1 * v)
               else return (name1, a1, b1) -- leave unchanged
       let rightTransformer = \assertName (name4, a4, b4) ->
             if name4 == name3 || a4 == 0
-              then return ("joinedsize" ++ show uniqv, a4 * div (a2 * u) a3, b4 + a4 * div (a2 * v + b2 - b3) a3)
+              then return ((3, uniqv), a4 * div (a2 * u) a3, b4 + a4 * div (a2 * v + b2 - b3) a3)
               else return (name4, a4, b4) -- leave unchanged
       return (leftTransformer, rightTransformer)
     where
-      n = Var name2 False
       u = abs $ div a3 (gcd a2 a3)
 
-normBufSize :: GaiwanBuf a -> TypeingOut (String, Int, Int)
+normBufSize :: GaiwanBuf a -> TypeingOut (a, Int, Int)
 normBufSize (GaiwanBuf size _) = norm size
 
 -- Constrainst for the types (ignoring sizes)
@@ -591,10 +641,10 @@ renamec :: Int -> Constraints a -> Constraints (Tag a)
 renamec v = M.map (renameb v)
 
 renameb :: Int -> GaiwanBuf a -> TaggedBuff a
-renameb v = apply $ \name -> TVar (v, name)
+renameb v = apply (\name -> TVar (v, name)) (\(GaiwanBufSize a n i) -> GaiwanBufSize (v, a) n i)
 
-apply :: (a -> GShape b) -> GaiwanBuf a -> GaiwanBuf b
-apply f (GaiwanBuf exp gs) = GaiwanBuf exp (applys f gs)
+apply :: (a -> GShape b) -> (GaiwanBufSize a -> GaiwanBufSize b) -> GaiwanBuf a -> GaiwanBuf b
+apply f fs (GaiwanBuf exp gs) = GaiwanBuf (fs exp) (applys f gs)
 
 -- apply for shapes only
 applys :: (a -> GShape b) -> GShape a -> GShape b
@@ -606,27 +656,18 @@ unrename :: Tagable a => GTransformType (Tag a) -> GTransformType a
 unrename (GTransformType c gbs gb) = GTransformType (M.map unrenameb c) (map unrenameb gbs) (map unrenameb gb)
 
 unrenameb :: Tagable a => GaiwanBuf (Tag a) -> GaiwanBuf a
-unrenameb = apply $ \tagedname -> TVar $ untagify tagedname
+unrenameb = apply (TVar . untagify) (\(GaiwanBufSize x0 n i) -> GaiwanBufSize (untagify x0) n i)
 
 -- | Unify the size of buffers
 bufType :: TaggedBuff a -> GShape (Tag a)
 bufType (GaiwanBuf exp gs) = gs
 
 -- | Normalize a size expression and get (varname, a, b) = a*varname + b
-norm :: Exp -> TypeingOut (String, Int, Int)
-norm (Times (Int a2) (Var name2 False)) = return (name2, a2, 0)
-norm (Times (Var name2 False) (Int a2)) = return (name2, a2, 0)
-norm (Var name2 False) = return (name2, 1, 0)
-norm (Plus (Var name2 False) (Int b)) = return (name2, 1, b)
-norm (Plus (Times (Var name2 False) (Int a)) (Int b)) = return (name2, a, b)
-norm (Plus (Times (Int a) (Var name2 False)) (Int b)) = return (name2, a, b)
-norm (Int b) = do
-  uniqv <- nextUniqv
-  return ("freelen_" ++ show uniqv, 0, b)
-norm idk = fail $ "Could not normalize " ++ show idk
+norm :: GaiwanBufSize a -> TypeingOut (a, Int, Int)
+norm (GaiwanBufSize name slope intercept) = return (name, slope, intercept)
 
-denorm :: (String, Int, Int) -> Exp
-denorm (name, a, k) = simplifyExp $ Plus (Times (Int a) (Var name False)) (Int k)
+denorm :: (a, Int, Int) -> GaiwanBufSize a
+denorm (name, slope, intercept) = GaiwanBufSize name slope intercept
 
 typeWithExpectionAndJustArgs :: Maybe GBufOrShapeDefault -> MaybeEnvType -> Exp -> TypeingOut GBufOrShapeDefault
 typeWithExpectionAndJustArgs x args exp = maybe (fail "failed to lift maybe tuple") b (mapM liftMaybeTuple args)
@@ -715,7 +756,7 @@ liftMaybeTuple (a, Just x) = Just (a, x)
 liftMaybeTuple (a, Nothing) = Nothing
 
 bufferType1 :: Maybe GBufOrShapeDefault -> TypeingOut (Maybe StmtShape)
-bufferType1 (Just (ABuf (GaiwanBuf (Int 1) b))) = return $ Just b
+bufferType1 (Just (ABuf (GaiwanBuf (GaiwanBufSize sizeName slope intercept) b))) | slope == 0 && intercept == 1 = return $ Just b
 bufferType1 (Just (ABuf GaiwanBuf {})) = fail "non buffer type with length one for out of reducer"
 bufferType1 (Just _) = fail "non buffer type"
 bufferType1 Nothing = return Nothing

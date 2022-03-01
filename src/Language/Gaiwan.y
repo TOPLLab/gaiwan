@@ -112,10 +112,13 @@ maybetype :: { Maybe (GBufOrShape String) }
 maybetype : {- empty -} {Nothing }
           | ':' type {Just $2 }
 
-{- No arrow type needed in the parser -}
+{- No arrow type needed in the parser TODO more shapes of the size-}
 type :: { (GBufOrShape String) }
 type : shape {AShape $1 }
-     | shape '[' ExpBase ']'  { ABuf $ GaiwanBuf $3 $1 }
+     | shape '[' int '*' var '+' int ']'  { ABuf $ GaiwanBuf (GaiwanBufSize $5 $3 $7) $1 }
+     | shape '[' int '*' var ']'  { ABuf $ GaiwanBuf (GaiwanBufSize $5 $3 0) $1 }
+     | shape '[' var '+' int ']'  { ABuf $ GaiwanBuf (GaiwanBufSize $3 1 $5) $1 }
+     | shape '[' var ']'  { ABuf $ GaiwanBuf (GaiwanBufSize $3 1 0) $1 }
 
 shape :: { GShape String }
 shape : int { GaiwanInt }
