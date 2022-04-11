@@ -513,7 +513,7 @@ joinT1
     let c1 = M.toAscList mc1
     cTypes <- mapM (normBufSize . snd) c1
     (cTypesOut, fFrom, fTo) <- joinT3 cTypes arg1 arg2 arg3 arg4
-    let c1new = zip (map fst c1) (zipWith reJoin (map snd c1) cTypesOut) -- TODO check
+    let c1new = zip (map fst c1) (zipWith reJoin (map snd c1) cTypesOut)
     return (GTransformType (M.fromAscList c1new) (zipWith reJoin from1 fFrom) (zipWith reJoin to2 fTo))
     where
       reJoin :: GaiwanBuf a -> (a, Int, Int) -> GaiwanBuf a
@@ -534,10 +534,10 @@ joinT3 ::
   [(Tag a, Int, Int)] ->
   TypeingOut ([(Tag a, Int, Int)], [(Tag a, Int, Int)], [(Tag a, Int, Int)])
 joinT3 c from fm tm to = do
-  f <- joinT2 fm tm (\b a -> return a)
-  c' <- mapM (f True) c
-  from' <- mapM (f False) from
-  to' <- mapM (f False) to
+  f <- joinT2 fm tm return
+  c' <- mapM f c
+  from' <- mapM f from
+  to' <- mapM f to
   return (c', from', to')
 
 joinT2 ::
@@ -547,14 +547,14 @@ joinT2 ::
   -- | to todo
   [(Tag a, Int, Int)] ->
   -- unifier accumulator
-  (Bool -> (Tag a, Int, Int) -> TypeingOut (Tag a, Int, Int)) ->
-  TypeingOut (Bool -> (Tag a, Int, Int) -> TypeingOut (Tag a, Int, Int))
+  ((Tag a, Int, Int) -> TypeingOut (Tag a, Int, Int)) ->
+  TypeingOut ((Tag a, Int, Int) -> TypeingOut (Tag a, Int, Int))
 joinT2 [] [] f = return f
 joinT2 (l1 : lr) (r1 : rr) f = do
   nextF <- solveTCnt l1 r1
-  lN <- mapM (nextF True) lr
-  rN <- mapM (nextF True) rr
-  joinT2 lN rN (\b a -> (f b a) >>= (\na -> nextF b na)) -- TODO make chaining nicer
+  lN <- mapM (nextF) lr
+  rN <- mapM (nextF) rr
+  joinT2 lN rN (\a -> (f a) >>= nextF) -- TODO make chaining nicer
 joinT2 _ _ f = fail "incompatible number of buffers"
 
 -- | solve
@@ -562,12 +562,12 @@ solveTCnt ::
   (Freshable a, Eq a, Show a) =>
   (Tag a, Int, Int) ->
   (Tag a, Int, Int) ->
-  TypeingOut (Bool -> (Tag a, Int, Int) -> TypeingOut (Tag a, Int, Int))
+  TypeingOut ((Tag a, Int, Int) -> TypeingOut (Tag a, Int, Int))
 solveTCnt
   (name2, a2, b2) -- overlapping sizes, these 2 should be unified
   (name3, a3, b3) -- -/
     | name2 == name3 && a2 == a3 && b2 == b3 =
-      return (const return) -- basically id
+      return (return) -- basically id
 solveTCnt
   (name2, a2, b2) -- overlapping sizes, these 2 should be unified TODO improve docs FIXME CHECK THIS !!!!
   (name3, a3, b3) -- -/
@@ -575,7 +575,7 @@ solveTCnt
       -- we know that the linear factor must be zero (0*x + b = a₃*x + b ⇒ a₃ = 0)
       do
         uniqv <- fresh
-        let zeroTransformer = \assertName (name1, a1, b1) ->
+        let zeroTransformer = \(name1, a1, b1) ->
               if name1 == name2 || a1 == 0
                 then return ((4, uniqv), 0, b1)
                 else return (name1, a1, b1) -- leave unchanged
@@ -605,7 +605,7 @@ solveTCnt
               return
               $ find (\v -> (a2 * v - (b3 - b2)) `mod` a3 == 0) [0 .. (abs a3)]
       return
-        ( \assertName (otherName, a1, b1) ->
+        ( \(otherName, a1, b1) ->
             case () of
               _
                 | otherName == name2 ->
