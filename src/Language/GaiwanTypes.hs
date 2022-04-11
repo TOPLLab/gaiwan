@@ -37,6 +37,7 @@ import Data.Functor
 import qualified Data.List as L
 import qualified Data.Map as M
 import Data.Maybe
+--import Debug.Trace
 import Language.GaiwanDefs
 
 data Void -- needed for var free types
@@ -152,25 +153,27 @@ data TypedProgram = TypedProg TransformType [TypedInstr]
 checkDefsType :: Program String -> Either String [TypedAbstraction]
 checkDefsType (Prog s e) =
   (`evalStateT` 0) $ do
-    renamedS <- mapM alphaRenameShape s
+    renamedS <- mapM alphaRename s
     mapM toTypedSmt renamedS
 
 checkType :: Program String -> Either String TypedProgram
 checkType (Prog s e) = (`evalStateT` 0) $ do
-  renamedS <- mapM alphaRenameShape s
+  renamedS <- mapM alphaRename s
   typedStmts <- mapM toTypedSmt renamedS -- type the definitions
   typedInstrs <- mapM (toTypedInstr typedStmts []) e -- apply the types of the definitions to the instrucions of the coordination language
   resultType <- mergeTList (map typedInstr typedInstrs)
   return $ TypedProg resultType typedInstrs
 
+-- Alpha rename types
 alphaRenameAbstType :: AbstType -> TypeingOut AbstType
-alphaRenameAbstType (GaiwanArrow gss (GTransformType map gbs1 gbs2)) =
+alphaRenameAbstType (GaiwanArrow argShapes (GTransformType map types1 types2)) | M.size map == 0 =
   do
-    lt <- growAlphaLT2 M.empty gbs1
-    gss' <- mapM (applyAphaLT lt) gss
-    gbs1' <- mapM (applyAphaLT2 lt) gbs1
-    gbs2' <- mapM (applyAphaLT2 lt) gbs2
-    return (GaiwanArrow gss' (GTransformType map gbs1' gbs2'))
+    lt <- growAlphaLT2 M.empty types1
+    argShapes' <- mapM (applyAphaLT lt) argShapes
+    types1' <- mapM (applyAphaLT2 lt) types1
+    types2' <- mapM (applyAphaLT2 lt) types2
+    return (GaiwanArrow argShapes' (GTransformType M.empty types1' types2'))
+alphaRenameAbstType (GaiwanArrow argShapes _) = fail "Could not type GaiwanArrow with contraints, these should never have containts"
 
 applyAphaLT2 :: M.Map ShapeVar ShapeVar -> GaiwanBuf ShapeVar -> TypeingOut (GaiwanBuf ShapeVar)
 applyAphaLT2 lt (GaiwanBuf exp gs) = do
@@ -186,8 +189,8 @@ growAlphaLT2 lt ((GaiwanBuf exp gs) : xr) = do
 -- | Apply alpha renaming to a shape
 -- This will be used storing the value in the TypeingOut monad
 -- This will ensure that every time the value is obtained, it is renamed
-alphaRenameShape :: (Ord s, Show s) => Abstraction s -> TypeingOut AbstractionDefault
-alphaRenameShape (Abstraction m_gbos name args steps) = do
+alphaRename :: (Ord s, Show s) => Abstraction s -> TypeingOut AbstractionDefault
+alphaRename (Abstraction m_gbos name args steps) = do
   steps' <- mapM doAlphaRename steps
   lt <- createAlphaLT args
   m_gbos' <- applyAphaLTMaybe lt m_gbos
@@ -310,6 +313,7 @@ toTypedInstr definitions env a@(IApp name True args) = fail $ "error: built in f
 toTypedInstr definitions env (IApp name False args) = do
   abstraction <- lookupAbst name definitions
   argTypes <- mapM (typeOfBody env) args
+  -- TODO should these be reverserd? first fill in shape vars in abstType?
   absType <- alphaRenameAbstType $ abstrType abstraction
   apptype <- checkArgs absType argTypes
   return $ TIApp apptype abstraction args
@@ -393,7 +397,7 @@ maybeGaiwanInt indexType = fromMaybe (AShape GaiwanInt) indexType == AShape Gaiw
 toTypedSmtSimple :: Abstraction String -> Either String TypedAbstraction
 toTypedSmtSimple abs =
   (`evalStateT` 0) $ do
-    renamedS <- alphaRenameShape abs
+    renamedS <- alphaRename abs
     toTypedSmt renamedS
 
 toTypedSmt :: AbstractionDefault -> TypeingOut TypedAbstraction
@@ -508,7 +512,7 @@ joinT1
     arg4 <- mapM normBufSize to2
     let c1 = M.toAscList mc1
     cTypes <- mapM (normBufSize . snd) c1
-    (cTypesOut, fFrom, fTo) <- joinT2 cTypes arg1 arg2 arg3 arg4
+    (cTypesOut, fFrom, fTo) <- joinT3 cTypes arg1 arg2 arg3 arg4
     let c1new = zip (map fst c1) (zipWith reJoin (map snd c1) cTypesOut) -- TODO check
     return (GTransformType (M.fromAscList c1new) (zipWith reJoin from1 fFrom) (zipWith reJoin to2 fTo))
     where
@@ -516,7 +520,7 @@ joinT1
       reJoin (GaiwanBuf exp gs) newSize = GaiwanBuf (denorm newSize) gs
 joinT1 _ _ = fail "mc2 was non empty"
 
-joinT2 ::
+joinT3 ::
   (Freshable a, Eq a, Show a) =>
   -- |  constraint acc
   [(Tag a, Int, Int)] ->
@@ -529,31 +533,41 @@ joinT2 ::
   -- | to acc
   [(Tag a, Int, Int)] ->
   TypeingOut ([(Tag a, Int, Int)], [(Tag a, Int, Int)], [(Tag a, Int, Int)])
-joinT2 c f [] [] t = return (c, f, t)
-joinT2 c f (l1 : lr) (r1 : rr) t = do
-  (l, r) <- solveTCnt l1 r1
-  fN <- mapM (l True) f
-  tN <- mapM (r True) t
-  lN <- mapM (l True) lr
-  rN <- mapM (r True) rr
-  cN <- mapM (l False) c
-  joinT2 cN fN lN rN tN
-joinT2 _ f _ _ t = fail "incompatible number of buffers"
+joinT3 c from fm tm to = do
+  f <- joinT2 fm tm (\b a -> return a)
+  c' <- mapM (f True) c
+  from' <- mapM (f False) from
+  to' <- mapM (f False) to
+  return (c', from', to')
+
+joinT2 ::
+  (Freshable a, Eq a, Show a) =>
+  -- | from todo
+  [(Tag a, Int, Int)] ->
+  -- | to todo
+  [(Tag a, Int, Int)] ->
+  -- unifier accumulator
+  (Bool -> (Tag a, Int, Int) -> TypeingOut (Tag a, Int, Int)) ->
+  TypeingOut (Bool -> (Tag a, Int, Int) -> TypeingOut (Tag a, Int, Int))
+joinT2 [] [] f = return f
+joinT2 (l1 : lr) (r1 : rr) f = do
+  nextF <- solveTCnt l1 r1
+  lN <- mapM (nextF True) lr
+  rN <- mapM (nextF True) rr
+  joinT2 lN rN (\b a -> (f b a) >>= (\na -> nextF b na)) -- TODO make chaining nicer
+joinT2 _ _ f = fail "incompatible number of buffers"
 
 -- | solve
 solveTCnt ::
   (Freshable a, Eq a, Show a) =>
   (Tag a, Int, Int) ->
   (Tag a, Int, Int) ->
-  TypeingOut
-    ( Bool -> (Tag a, Int, Int) -> TypeingOut (Tag a, Int, Int),
-      Bool -> (Tag a, Int, Int) -> TypeingOut (Tag a, Int, Int) -- (Sizes of the inputs, sizes of the output)
-    )
+  TypeingOut (Bool -> (Tag a, Int, Int) -> TypeingOut (Tag a, Int, Int))
 solveTCnt
   (name2, a2, b2) -- overlapping sizes, these 2 should be unified
   (name3, a3, b3) -- -/
     | name2 == name3 && a2 == a3 && b2 == b3 =
-      return (const return, const return) -- basically id
+      return (const return) -- basically id
 solveTCnt
   (name2, a2, b2) -- overlapping sizes, these 2 should be unified TODO improve docs FIXME CHECK THIS !!!!
   (name3, a3, b3) -- -/
@@ -563,9 +577,9 @@ solveTCnt
         uniqv <- fresh
         let zeroTransformer = \assertName (name1, a1, b1) ->
               if name1 == name2 || a1 == 0
-                then return ((3, uniqv), 0, b1)
+                then return ((4, uniqv), 0, b1)
                 else return (name1, a1, b1) -- leave unchanged
-        return (zeroTransformer, zeroTransformer)
+        return zeroTransformer
 solveTCnt
   (name2, a2, b2) -- overlapping sizes, these 2 should be unified TODO improve docs
   (name3, a3, b3) -- -/
@@ -590,15 +604,22 @@ solveTCnt
               (fail $ "Could not unify" ++ show (a2, b3 - b2, a3))
               return
               $ find (\v -> (a2 * v - (b3 - b2)) `mod` a3 == 0) [0 .. (abs a3)]
-      let leftTransformer = \assertName (name1, a1, b1) ->
-            if name1 == name2 || a1 == 0
-              then return ((3, uniqv), a1 * u, b1 + a1 * v)
-              else return (name1, a1, b1) -- leave unchanged
-      let rightTransformer = \assertName (name4, a4, b4) ->
-            if name4 == name3 || a4 == 0
-              then return ((3, uniqv), a4 * div (a2 * u) a3, b4 + a4 * div (a2 * v + b2 - b3) a3)
-              else return (name4, a4, b4) -- leave unchanged
-      return (leftTransformer, rightTransformer)
+      return
+        ( \assertName (otherName, a1, b1) ->
+            case () of
+              _
+                | otherName == name2 ->
+                  ( --trace (show assertName ++ "Unified with left " ++ show (otherName, a1, b1) ++ " with " ++ show (name2, a2, b2) ++ " to " ++ show ((3, uniqv), a1 * u, b1 + a1 * v)) $
+                    return ((3, uniqv), a1 * u, b1 + a1 * v)
+                  )
+                | otherName == name3 ->
+                  ( --trace ( show assertName ++ "Unified with right " ++ show (otherName, a1, b1) ++ " with " ++ show (name3, a3, b3) ++ " to " ++ show ((3, uniqv), a1 * div (a2 * u) a3, b1 + a1 * div (a2 * v + b2 - b3) a3)) $
+                    return ((3, uniqv), a1 * div (a2 * u) a3, b1 + a1 * div (a2 * v + b2 - b3) a3)
+                  )
+                | otherwise ->
+                  --trace (show assertName ++ "Unified with nothing " ++ show (otherName, a1, b1) ++ " remains") $
+                  return (otherName, a1, b1)
+        )
     where
       u = abs $ div a3 (gcd a2 a3)
 

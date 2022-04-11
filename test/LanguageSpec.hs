@@ -23,8 +23,8 @@ n = GaiwanBufSize "n" 1 0 :: GaiwanBufSize String
 
 v = Var "v" False
 
-mergeTStr :: GTransformType Int -> GTransformType Int -> Either String (GTransformType Int)
-mergeTStr a b = evalStateT (mergeT a b) 0
+mergeTInt :: GTransformType Int -> GTransformType Int -> Either String (GTransformType Int)
+mergeTInt a b = evalStateT (mergeT a b) 0
 
 joinedSize1 = Var "joinedsize1" False
 
@@ -58,26 +58,52 @@ spec = do
         )
         `shouldBe` Right (TAbstraction (GaiwanArrow [GaiwanInt] (GTransformType M.empty [GaiwanBuf (GaiwanBufSize 0 1 0) GaiwanInt] [GaiwanBuf (GaiwanBufSize 0 1 0) GaiwanInt])) "nameOFanAbstraction" ["size"] [TMapper (GTransformType M.empty [GaiwanBuf (GaiwanBufSize 0 1 0) GaiwanInt] [GaiwanBuf (GaiwanBufSize 0 1 0) GaiwanInt]) "nameOFaMapper" ["i", "v"] (Plus (Var "size" False) (Var "v" False))])
 
+    it "Merges types correctly: n # n->n => n->n with type vars" $
+      mergeTInt
+        ( GTransformType
+            (M.fromList [("a", GaiwanBuf (GaiwanBufSize 1234 1 0) (TVar 5)), ("b", GaiwanBuf (GaiwanBufSize 1235 1 0) (TVar 7))])
+            []
+            [GaiwanBuf (GaiwanBufSize 1234 1 0) (TVar 5)]
+        )
+        (GTransformType M.empty [GaiwanBuf (GaiwanBufSize 1337 1 0) (GaiwanTuple [TVar 502, TVar 503, TVar 503, TVar 504])] [GaiwanBuf (GaiwanBufSize 1337 1 0) GaiwanInt])
+        `shouldBe` Right (GTransformType (M.fromList [("a", GaiwanBuf (GaiwanBufSize 3 1 0) (GaiwanTuple [TVar 5022, TVar 5032, TVar 5032, TVar 5042])), ("b", GaiwanBuf (GaiwanBufSize 12351 1 0) (TVar 71))]) [] [GaiwanBuf (GaiwanBufSize 3 1 0) GaiwanInt])
+
+    it "Merges types correctly: (n,2m+1) # (n,4n+1)->n => n with inut n and 4n+1" $
+      mergeTInt
+        ( GTransformType
+            (M.fromList [("a", GaiwanBuf (GaiwanBufSize 1234 1 0) (TVar 5)), ("b", GaiwanBuf (GaiwanBufSize 1235 2 1) (TVar 7))])
+            []
+            [GaiwanBuf (GaiwanBufSize 1234 1 0) (TVar 5), GaiwanBuf (GaiwanBufSize 1235 2 1) (TVar 7)]
+        )
+        ( GTransformType
+            M.empty
+            [ GaiwanBuf (GaiwanBufSize 1337 1 0) GaiwanInt,
+              GaiwanBuf (GaiwanBufSize 1337 4 1) GaiwanInt
+            ]
+            [GaiwanBuf (GaiwanBufSize 1337 1 0) GaiwanInt]
+        )
+        `shouldBe` Right (GTransformType (M.fromList [("a", GaiwanBuf (GaiwanBufSize 13 1 0) GaiwanInt), ("b", GaiwanBuf (GaiwanBufSize 13 4 1) GaiwanInt)]) [] [GaiwanBuf (GaiwanBufSize 13 1 0) GaiwanInt])
+
     it "Merges types correctly: n->n # n->n => n->n with type vars" $
-      mergeTStr
+      mergeTInt
         (GTransformType M.empty [GaiwanBuf (GaiwanBufSize 1337 1 0) GaiwanInt] [GaiwanBuf (GaiwanBufSize 1337 1 0) (GaiwanTuple [TVar 501, TVar 501, TVar 502, TVar 502])])
         (GTransformType M.empty [GaiwanBuf (GaiwanBufSize 1337 1 0) (GaiwanTuple [TVar 502, TVar 503, TVar 503, TVar 504])] [GaiwanBuf (GaiwanBufSize 1337 1 0) GaiwanInt])
         `shouldBe` Right (GTransformType M.empty [GaiwanBuf (GaiwanBufSize 3 1 0) GaiwanInt] [GaiwanBuf (GaiwanBufSize 3 1 0) GaiwanInt])
 
     it "Merges types correctly: n->n # n->n => n->n" $
-      mergeTStr
+      mergeTInt
         (GTransformType M.empty [GaiwanBuf (GaiwanBufSize 1337 1 0) GaiwanInt] [GaiwanBuf (GaiwanBufSize 1337 1 0) GaiwanInt])
         (GTransformType M.empty [GaiwanBuf (GaiwanBufSize 1337 1 0) GaiwanInt] [GaiwanBuf (GaiwanBufSize 1337 1 0) GaiwanInt])
         `shouldBe` Right (GTransformType M.empty [GaiwanBuf (GaiwanBufSize 3 1 0) GaiwanInt] [GaiwanBuf (GaiwanBufSize 3 1 0) GaiwanInt])
 
     it "Merges types correctly: n->n+2 # 2n-> n => 2n -> n+1" $
-      mergeTStr
+      mergeTInt
         (GTransformType M.empty [GaiwanBuf (GaiwanBufSize 1337 1 0) GaiwanInt] [GaiwanBuf (GaiwanBufSize 1337 1 2) GaiwanInt])
         (GTransformType M.empty [GaiwanBuf (GaiwanBufSize 1337 2 0) GaiwanInt] [GaiwanBuf (GaiwanBufSize 1337 1 0) GaiwanInt])
         `shouldBe` Right (GTransformType M.empty [GaiwanBuf (GaiwanBufSize 3 2 0) GaiwanInt] [GaiwanBuf (GaiwanBufSize 3 1 1) GaiwanInt])
 
     it "Merges types correctly: n->(n+2, n+2) # (2n, 4n) => ERROR" $
-      mergeTStr
+      mergeTInt
         ( GTransformType
             M.empty
             [ GaiwanBuf (GaiwanBufSize 1337 1 0) GaiwanInt
@@ -97,7 +123,7 @@ spec = do
         `shouldSatisfy` isLeft
 
     it "Merges types correctly: n->(n+2, 2n+4) # (2n, 4n)-> n => 2n -> n+1" $
-      mergeTStr
+      mergeTInt
         ( GTransformType
             M.empty
             [ GaiwanBuf (GaiwanBufSize 1337 1 0) GaiwanInt
@@ -117,7 +143,7 @@ spec = do
         `shouldBe` Right (GTransformType M.empty [GaiwanBuf (GaiwanBufSize 3 2 0) GaiwanInt] [GaiwanBuf (GaiwanBufSize 3 1 1) GaiwanInt])
 
     it "Merges types correctly: n->(n+2, 19, 2n+4) # (2n, 19,4n)-> n => 2n -> n+1" $
-      mergeTStr
+      mergeTInt
         ( GTransformType
             M.empty
             [ GaiwanBuf (GaiwanBufSize 1337 1 0) GaiwanInt
@@ -139,7 +165,7 @@ spec = do
         `shouldBe` Right (GTransformType M.empty [GaiwanBuf (GaiwanBufSize 3 2 0) GaiwanInt] [GaiwanBuf (GaiwanBufSize 3 1 1) GaiwanInt])
 
     it "Merges types correctly: n->(2n+4, n+2) # (4n, 2n)-> n => 2n -> n+1" $
-      mergeTStr
+      mergeTInt
         ( GTransformType
             M.empty
             [ GaiwanBuf (GaiwanBufSize 1337 1 0) GaiwanInt
@@ -159,7 +185,7 @@ spec = do
         `shouldBe` Right (GTransformType M.empty [GaiwanBuf (GaiwanBufSize 3 2 0) GaiwanInt] [GaiwanBuf (GaiwanBufSize 3 1 1) GaiwanInt])
 
     it "Merges types correctly: n->(2n+4, n+2) # (4, 2n)-> n => 0 -> 1" $
-      mergeTStr
+      mergeTInt
         ( GTransformType
             M.empty
             [ GaiwanBuf (GaiwanBufSize 1337 1 0) GaiwanInt
@@ -179,7 +205,7 @@ spec = do
         `shouldBe` Right (GTransformType M.empty [GaiwanBuf (GaiwanBufSize 13 0 0) GaiwanInt] [GaiwanBuf (GaiwanBufSize 13 0 1) GaiwanInt])
 
     it "Merges types correctly: n->(2n+4, n+2) # (4, 2n)-> n => 0 -> 1" $
-      mergeTStr
+      mergeTInt
         ( GTransformType
             M.empty
             [ GaiwanBuf (GaiwanBufSize 1337 1 0) GaiwanInt
@@ -196,66 +222,67 @@ spec = do
             [ GaiwanBuf (GaiwanBufSize 1337 1 0) GaiwanInt
             ]
         )
-        `shouldBe` Right (GTransformType M.empty [GaiwanBuf (GaiwanBufSize 13 0 0) GaiwanInt] [GaiwanBuf (GaiwanBufSize 13 0 1) GaiwanInt])
+        `shouldBe` Right (GTransformType M.empty [GaiwanBuf (GaiwanBufSize 14 0 0) GaiwanInt] [GaiwanBuf (GaiwanBufSize 14 0 1) GaiwanInt])
 
     it "Merges types correctly: n->n+2 # 2n+1->n  => 2n+1->n+1" $
-      mergeTStr
+      mergeTInt
         (GTransformType M.empty [GaiwanBuf (GaiwanBufSize 1337 1 0) GaiwanInt] [GaiwanBuf (GaiwanBufSize 1337 1 2) GaiwanInt])
         (GTransformType M.empty [GaiwanBuf (GaiwanBufSize 1337 2 1) GaiwanInt] [GaiwanBuf (GaiwanBufSize 1337 1 0) GaiwanInt])
         `shouldBe` Right (GTransformType M.empty [GaiwanBuf (GaiwanBufSize 3 2 1) GaiwanInt] [GaiwanBuf (GaiwanBufSize 3 1 1) GaiwanInt])
     it "Merges types correctly: 2n->n+2 # 3n+1->n => 6n+4->n+1" $
-      mergeTStr
+      mergeTInt
         (GTransformType M.empty [GaiwanBuf (GaiwanBufSize 1337 2 0) GaiwanInt] [GaiwanBuf (GaiwanBufSize 1337 1 2) GaiwanInt])
         (GTransformType M.empty [GaiwanBuf (GaiwanBufSize 1337 3 1) GaiwanInt] [GaiwanBuf (GaiwanBufSize 1337 1 0) GaiwanInt])
         `shouldBe` Right (GTransformType M.empty [GaiwanBuf (GaiwanBufSize 3 6 4) GaiwanInt] [GaiwanBuf (GaiwanBufSize 3 1 1) GaiwanInt])
     it "Merges types correctly: 2n->9n+1 # 3n+1->n => 2n->3n" $
-      mergeTStr
+      mergeTInt
         (GTransformType M.empty [GaiwanBuf (GaiwanBufSize 1337 2 0) GaiwanInt] [GaiwanBuf (GaiwanBufSize 1337 9 1) GaiwanInt])
         (GTransformType M.empty [GaiwanBuf (GaiwanBufSize 1337 3 1) GaiwanInt] [GaiwanBuf (GaiwanBufSize 1337 1 0) GaiwanInt])
         `shouldBe` Right (GTransformType M.empty [GaiwanBuf (GaiwanBufSize 3 2 0) GaiwanInt] [GaiwanBuf (GaiwanBufSize 3 3 0) GaiwanInt])
     it "Merges types correctly: 2n->9n+4 # 3n+1->n => 2n->3n + 1" $
-      mergeTStr
+      mergeTInt
         (GTransformType M.empty [GaiwanBuf (GaiwanBufSize 1337 2 0) GaiwanInt] [GaiwanBuf (GaiwanBufSize 1337 9 4) GaiwanInt])
         (GTransformType M.empty [GaiwanBuf (GaiwanBufSize 1337 3 1) GaiwanInt] [GaiwanBuf (GaiwanBufSize 1337 1 0) GaiwanInt])
         `shouldBe` Right (GTransformType M.empty [GaiwanBuf (GaiwanBufSize 3 2 0) GaiwanInt] [GaiwanBuf (GaiwanBufSize 3 3 1) GaiwanInt])
     it "Merges types correctly: n->3n+1 # 9n+4 -> n => 3n+1 -> n " $
-      mergeTStr
+      mergeTInt
         (GTransformType M.empty [GaiwanBuf (GaiwanBufSize 1337 1 0) GaiwanInt] [GaiwanBuf (GaiwanBufSize 1337 3 1) GaiwanInt])
         (GTransformType M.empty [GaiwanBuf (GaiwanBufSize 1337 9 4) GaiwanInt] [GaiwanBuf (GaiwanBufSize 1337 1 0) GaiwanInt])
         `shouldBe` Right (GTransformType M.empty [GaiwanBuf (GaiwanBufSize 3 3 1) GaiwanInt] [GaiwanBuf (GaiwanBufSize 3 1 0) GaiwanInt])
     it "Merges types correctly: n->11n+2 # n+3->n => n->11n-1" $
-      mergeTStr
+      mergeTInt
         (GTransformType M.empty [GaiwanBuf (GaiwanBufSize 1337 1 0) GaiwanInt] [GaiwanBuf (GaiwanBufSize 1337 11 2) GaiwanInt])
         (GTransformType M.empty [GaiwanBuf (GaiwanBufSize 1337 1 3) GaiwanInt] [GaiwanBuf (GaiwanBufSize 1337 1 0) GaiwanInt])
         `shouldBe` Right (GTransformType M.empty [GaiwanBuf (GaiwanBufSize 3 1 0) GaiwanInt] [GaiwanBuf (GaiwanBufSize 3 11 (-1)) GaiwanInt])
     it "Merges types correctly: n->11n+2 # 7n+3->n => 7n+2->11n+3" $
-      mergeTStr
+      mergeTInt
         (GTransformType M.empty [GaiwanBuf (GaiwanBufSize 1337 1 0) GaiwanInt] [GaiwanBuf (GaiwanBufSize 1337 11 2) GaiwanInt])
         (GTransformType M.empty [GaiwanBuf (GaiwanBufSize 1337 7 3) GaiwanInt] [GaiwanBuf (GaiwanBufSize 1337 1 0) GaiwanInt])
         `shouldBe` Right (GTransformType M.empty [GaiwanBuf (GaiwanBufSize 3 7 2) GaiwanInt] [GaiwanBuf (GaiwanBufSize 3 11 3) GaiwanInt])
     it "Merges types correctly: n->100-n # 200-2n->n => 2n->n+50" $
-      mergeTStr
+      mergeTInt
         (GTransformType M.empty [GaiwanBuf (GaiwanBufSize 1337 1 0) GaiwanInt] [GaiwanBuf (GaiwanBufSize 1337 (-1) 100) GaiwanInt])
         (GTransformType M.empty [GaiwanBuf (GaiwanBufSize 1337 (-2) 200) GaiwanInt] [GaiwanBuf (GaiwanBufSize 1337 1 0) GaiwanInt])
         `shouldBe` Right (GTransformType M.empty [GaiwanBuf (GaiwanBufSize 3 2 0) GaiwanInt] [GaiwanBuf (GaiwanBufSize 3 1 50) GaiwanInt])
     it "Merges types correctly: n->100-n # 200-2n->n => 2n->n+50" $
-      mergeTStr
+      mergeTInt
         (GTransformType M.empty [GaiwanBuf (GaiwanBufSize 1337 1 0) GaiwanInt] [GaiwanBuf (GaiwanBufSize 1337 (-1) 100) GaiwanInt])
         (GTransformType M.empty [GaiwanBuf (GaiwanBufSize 1337 (-2) 200) GaiwanInt] [GaiwanBuf (GaiwanBufSize 1337 1 0) GaiwanInt])
         `shouldBe` Right (GTransformType M.empty [GaiwanBuf (GaiwanBufSize 3 2 0) GaiwanInt] [GaiwanBuf (GaiwanBufSize 3 1 50) GaiwanInt])
     it "Merges types correctly: n->100-n # 2n->n => 2n->50-n" $
-      mergeTStr
+      mergeTInt
         (GTransformType M.empty [GaiwanBuf (GaiwanBufSize 1337 1 0) GaiwanInt] [GaiwanBuf (GaiwanBufSize 1337 (-1) 100) GaiwanInt])
         (GTransformType M.empty [GaiwanBuf (GaiwanBufSize 1337 2 0) GaiwanInt] [GaiwanBuf (GaiwanBufSize 1337 1 0) GaiwanInt])
         `shouldBe` Right (GTransformType M.empty [GaiwanBuf (GaiwanBufSize 3 2 0) GaiwanInt] [GaiwanBuf (GaiwanBufSize 3 (-1) 50) GaiwanInt])
 
     it "Merges types correctly: n->2n+2 # 2n->50-n => n->49-n" $
-      mergeTStr
+      mergeTInt
         (GTransformType M.empty [GaiwanBuf (GaiwanBufSize 1337 1 0) GaiwanInt] [GaiwanBuf (GaiwanBufSize 1337 2 2) GaiwanInt])
         (GTransformType M.empty [GaiwanBuf (GaiwanBufSize 1337 2 0) GaiwanInt] [GaiwanBuf (GaiwanBufSize 1337 (-1) 50) GaiwanInt])
         `shouldBe` Right (GTransformType M.empty [GaiwanBuf (GaiwanBufSize 3 1 0) GaiwanInt] [GaiwanBuf (GaiwanBufSize 3 (-1) 49) GaiwanInt])
+
     it "Merges types correctly: n->2n+1 # 2n->n => FAIL" $
-      mergeTStr
+      mergeTInt
         (GTransformType M.empty [GaiwanBuf (GaiwanBufSize 1337 1 0) GaiwanInt] [GaiwanBuf (GaiwanBufSize 1337 2 1) GaiwanInt])
         (GTransformType M.empty [GaiwanBuf (GaiwanBufSize 1337 2 0) GaiwanInt] [GaiwanBuf (GaiwanBufSize 1337 1 0) GaiwanInt])
         `shouldSatisfy` isLeft
@@ -371,7 +398,56 @@ spec = do
     let prog = Prog [def] [Return ["a", "b"], IApp "nameOfAShaper" False []]
     it "Simple return of two" $
       checkType prog
-        `shouldBe` Right (TypedProg (GTransformType (M.fromList [("a", GaiwanBuf (GaiwanBufSize 83 1 0) GaiwanInt), ("b", GaiwanBuf (GaiwanBufSize 93 1 0) GaiwanInt)]) [] [GaiwanBuf (GaiwanBufSize 93 1 0) GaiwanInt]) [TRetrun (GTransformType (M.fromList [("a", GaiwanBuf (GaiwanBufSize 4 1 0) (TVar 5)), ("b", GaiwanBuf (GaiwanBufSize 6 1 0) (TVar 7))]) [] [GaiwanBuf (GaiwanBufSize 4 1 0) (TVar 5), GaiwanBuf (GaiwanBufSize 6 1 0) (TVar 7)]) ["a", "b"], TIApp (GTransformType M.empty [GaiwanBuf (GaiwanBufSize 33 1 0) GaiwanInt, GaiwanBuf (GaiwanBufSize 33 1 0) GaiwanInt] [GaiwanBuf (GaiwanBufSize 33 1 0) GaiwanInt]) (TAbstraction (GaiwanArrow [] (GTransformType M.empty [GaiwanBuf (GaiwanBufSize 33 1 0) GaiwanInt, GaiwanBuf (GaiwanBufSize 33 1 0) GaiwanInt] [GaiwanBuf (GaiwanBufSize 33 1 0) GaiwanInt])) "nameOfAShaper" [] [TShaper (GTransformType M.empty [GaiwanBuf (GaiwanBufSize 1 1 0) (TVar 0), GaiwanBuf (GaiwanBufSize 1 1 0) (TVar 0)] [GaiwanBuf (GaiwanBufSize 1 1 0) (GaiwanTuple [TVar 0, TVar 0])]) "nameOFaMapper" ["i", "v", "w"] (Tuple [ArrayGet (Var "v" False) (Var "i" False), ArrayGet (Var "w" False) (Var "i" False)]), TMapper (GTransformType M.empty [GaiwanBuf (GaiwanBufSize 2 1 0) (GaiwanTuple [GaiwanInt, GaiwanInt])] [GaiwanBuf (GaiwanBufSize 2 1 0) GaiwanInt]) "nameOFaMapper" ["i", "v"] (Plus (Select (Var "v" False) 0) (Select (Var "v" False) 1))]) []])
+        `shouldBe` Right
+          ( TypedProg
+              ( GTransformType
+                  ( M.fromList
+                      [ ("a", GaiwanBuf (GaiwanBufSize 93 1 0) GaiwanInt),
+                        ("b", GaiwanBuf (GaiwanBufSize 93 1 0) GaiwanInt)
+                      ]
+                  )
+                  []
+                  [GaiwanBuf (GaiwanBufSize 93 1 0) GaiwanInt]
+              )
+              [ TRetrun
+                  ( GTransformType
+                      (M.fromList [("a", GaiwanBuf (GaiwanBufSize 4 1 0) (TVar 5)), ("b", GaiwanBuf (GaiwanBufSize 6 1 0) (TVar 7))])
+                      []
+                      [GaiwanBuf (GaiwanBufSize 4 1 0) (TVar 5), GaiwanBuf (GaiwanBufSize 6 1 0) (TVar 7)]
+                  )
+                  ["a", "b"],
+                TIApp
+                  ( GTransformType
+                      M.empty
+                      [GaiwanBuf (GaiwanBufSize 33 1 0) GaiwanInt, GaiwanBuf (GaiwanBufSize 33 1 0) GaiwanInt]
+                      [GaiwanBuf (GaiwanBufSize 33 1 0) GaiwanInt]
+                  )
+                  ( TAbstraction
+                      ( GaiwanArrow
+                          []
+                          ( GTransformType
+                              M.empty
+                              [GaiwanBuf (GaiwanBufSize 33 1 0) GaiwanInt, GaiwanBuf (GaiwanBufSize 33 1 0) GaiwanInt]
+                              [GaiwanBuf (GaiwanBufSize 33 1 0) GaiwanInt]
+                          )
+                      )
+                      "nameOfAShaper"
+                      []
+                      [ TShaper
+                          ( GTransformType
+                              M.empty
+                              [GaiwanBuf (GaiwanBufSize 1 1 0) (TVar 0), GaiwanBuf (GaiwanBufSize 1 1 0) (TVar 0)]
+                              [GaiwanBuf (GaiwanBufSize 1 1 0) (GaiwanTuple [TVar 0, TVar 0])]
+                          )
+                          "nameOFaMapper"
+                          ["i", "v", "w"]
+                          (Tuple [ArrayGet (Var "v" False) (Var "i" False), ArrayGet (Var "w" False) (Var "i" False)]),
+                        TMapper (GTransformType M.empty [GaiwanBuf (GaiwanBufSize 2 1 0) (GaiwanTuple [GaiwanInt, GaiwanInt])] [GaiwanBuf (GaiwanBufSize 2 1 0) GaiwanInt]) "nameOFaMapper" ["i", "v"] (Plus (Select (Var "v" False) 0) (Select (Var "v" False) 1))
+                      ]
+                  )
+                  []
+              ]
+          )
 
   describe "Language.Gaiwan (parser): check if all demos parse" $ do
     files <- runIO $ listDirectory "demo"
