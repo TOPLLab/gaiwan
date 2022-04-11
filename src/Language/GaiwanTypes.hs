@@ -41,7 +41,7 @@ import Language.GaiwanDefs
 
 data Void -- needed for var free types
 
--- Type of a abstraction
+-- Type of a abstraction (scalar vars ,  transformtype if called)
 data GAbsType a = GaiwanArrow [GShape a] (GTransformType a)
   deriving (Show, Eq)
 
