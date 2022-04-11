@@ -55,6 +55,7 @@ data GaiwanBuf a = GaiwanBuf (GaiwanBufSize a) (GShape a)
 type GaiwanBufDefault = GaiwanBuf ShapeVar
 
 -- Type of a transformation on buffers
+-- (constrainsts are only used for typing retun, GTransformType contraints [] outBufs)
 data GTransformType a = GTransformType (Constraints a) [GaiwanBuf a] [GaiwanBuf a]
   deriving (Show, Eq)
 
