@@ -1,5 +1,5 @@
-{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE RankNTypes #-}
 
 module Language.GaiwanTypes
   ( Program (..),
@@ -22,6 +22,7 @@ module Language.GaiwanTypes
     --    stmt,
     mergeT,
     checkType,
+    backPropagate,
     checkDefsType,
   )
 where
@@ -33,13 +34,12 @@ import Data.Foldable
 import Data.Functor
 import qualified Data.List as L
 import qualified Data.Map as M
-import Language.AlphaRename
 import Data.Maybe
+import Language.AlphaRename
 --import Debug.Trace
 import Language.GaiwanDefs
 
 data Void -- needed for var free types
-
 
 -- Type of a buffer
 
@@ -48,8 +48,6 @@ type GaiwanBufDefault = GaiwanBuf ShapeVar
 -- Type of a transformation on buffers
 -- (constrainsts are only used for typing retun, GTransformType contraints [] outBufs)
 type TransformType = GTransformType ShapeVar
-
-
 
 type GBufOrShapeDefault = GBufOrShape ShapeVar
 
@@ -65,17 +63,14 @@ type AbstType = GAbsType ShapeVar
 
 type ShapeVar = Int
 
-
 type StmtShape = GShape ShapeVar
 
 type Tag a = (Int, a)
 
 type TaggedStmtType a = GBufOrShape (Tag a)
 
-
 class Eq a => Tagable a where
   untagify :: Tag a -> a
-
 
 instance Freshable ShapeVar where
   fresh = nextUniqv
@@ -143,8 +138,6 @@ checkType (Prog s e) = (`evalStateT` 0) $ do
   typedInstrs <- mapM (toTypedInstr typedStmts []) e -- apply the types of the definitions to the instrucions of the coordination language
   resultType <- mergeTList (map typedInstr typedInstrs)
   return $ TypedProg resultType typedInstrs
-
-
 
 nextUniqvBuf :: TypeingOut (GaiwanBuf ShapeVar)
 nextUniqvBuf = do
@@ -221,13 +214,11 @@ lookupAbst name (_ : sr) = lookupAbst name sr
 abstrName :: TypedAbstraction -> String
 abstrName (TAbstraction _ name _ _) = name
 
-
 type ProgramDefault = Program ShapeVar
 
 type StmtDefault = Stmt ShapeVar
 
 type AbstractionDefault = Abstraction ShapeVar
-
 
 stmt :: forall t. TypedTransform -> (TransformType -> String -> [String] -> t) -> t
 stmt (TShaper a b c _) f = f a b c
@@ -634,3 +625,172 @@ liftMaybeBuff :: (String, Maybe GBufOrShapeDefault) -> TypeingOut (String, Gaiwa
 liftMaybeBuff (a, Nothing) = fail "No type given"
 liftMaybeBuff (a, Just (ABuf buf)) = return (a, buf)
 liftMaybeBuff (a, Just (AShape _)) = fail "Got scalar, expeced buffer"
+
+data BackPropMap a = BackPropMap -- the same product type with record syntax
+  { bpmShapesMap :: M.Map a (GShape a),
+    bpmSizes :: (GaiwanBufSize a -> GaiwanBufSize a)
+  }
+
+bpmBufShape :: BackPropMap ShapeVar -> GShape ShapeVar -> GShape ShapeVar
+bpmBufShape bpm GaiwanInt = GaiwanInt
+bpmBufShape bpm (GaiwanTuple gss) = GaiwanTuple $ map (bpmBufShape bpm) gss
+bpmBufShape bpm (TVar shape) = (bpmShapesMap bpm) M.! shape
+
+emptyBPM = BackPropMap M.empty id
+
+backPropagate :: TypedProgram -> TypeingOut TypedProgram
+backPropagate (TypedProg t typedInstr) = TypedProg t <$> (backPropagateT emptyBPM t typedInstr)
+
+-- NOTE: The returntype given as 2nd argumetn may not be correct!!!
+backPropagateT :: BackPropMap ShapeVar -> TransformType -> [TypedInstr] -> TypeingOut [TypedInstr]
+backPropagateT _ _ [] = return []
+backPropagateT
+  lt
+  (GTransformType constr1 fromT1 toT1)
+  ((TIApp (GTransformType constr2 fromT2 toT2) ta exps) : tis) =
+    do
+      ltc <- createLTConstrainst lt constr1 constr2
+      ltt <- createLTTypes ltc fromT1 fromT2
+      fromT2N <- applyBPT ltt fromT2
+      toT2N <- applyBPT ltt toT2
+      let resType = (GTransformType constr1 fromT2N toT2N)
+      let nextType = (GTransformType constr1 toT2N toT1)
+      tisN <- backPropagateT ltt nextType tis
+      taN <- backPropagateA emptyBPM resType ta
+      return $ ((TIApp resType taN exps) : tisN)
+backPropagateT
+  lt
+  (GTransformType constr1 fromT1 toT1)
+  ((TLoop (GTransformType constr2 fromT2 toT2) exp s loopTis) : tis) =
+    do
+      ltc <- createLTConstrainst lt constr1 constr2
+      ltt <- createLTTypes ltc fromT1 fromT2
+      fromT2N <- applyBPT ltt fromT2
+      toT2N <- applyBPT ltt toT2
+      let resType = (GTransformType constr1 fromT2N toT2N)
+      let nextType = (GTransformType constr1 toT2N toT1)
+      tisN <- backPropagateT ltt nextType tis
+      loopTisN <- backPropagateT emptyBPM resType loopTis
+      return $ ((TLoop resType exp s loopTisN) : tisN)
+backPropagateT
+  lt
+  (GTransformType constr1 [] toT1)
+  ((TRetrun (GTransformType constr2 [] toT2) ss) : tis) =
+    do
+      ltc <- createLTConstrainst lt constr1 constr2
+      toT2N <- applyBPT ltc toT2
+      let nextType = (GTransformType constr1 toT2N toT1)
+      tisN <- backPropagateT ltc nextType tis
+      return $ ((TRetrun (GTransformType constr1 [] toT2N) ss) : tisN)
+backPropagateT lt _ ((TRetrun {}) : tis) =
+  fail "Invalid requirement or derived return type"
+backPropagateT
+  lt
+  (GTransformType constr1 [] toT1)
+  ((TLetB (GTransformType constr2 [] toT2) varName tisVal tis2Body) : tis) =
+    do
+      ltc <- createLTConstrainst lt constr1 constr2
+      toT2N <- applyBPT ltc toT2
+      let nextType = (GTransformType constr1 toT2N toT1)
+      tisN <- backPropagateT ltc nextType tis
+      tisValN <- backPropagateT emptyBPM (GTransformType constr1 [] [] {- wrong constrains should be enough -}) tisVal
+      let (GTransformType _ _ [tisValNRet]) = typedInstr (last tisValN)
+      let bodyConstr = M.insert varName tisValNRet (M.delete varName constr1)
+      tisBodyN <- backPropagateT emptyBPM (GTransformType bodyConstr [] toT1) tisVal
+      return $ ((TLetB (GTransformType constr1 [] toT2N) varName tisValN tisBodyN) : tisN)
+backPropagateT lt _ ((TLetB {}) : tis) =
+  fail "Invalid requirement or derived letB type"
+
+-- TODO clean up
+backPropagateA :: BackPropMap ShapeVar -> GTransformType ShapeVar -> TypedAbstraction -> TypeingOut TypedAbstraction
+backPropagateA
+  bpm
+  (GTransformType constr1 fromT1 _)
+  (TAbstraction (GaiwanArrow scalars (GTransformType constr2 fromT2 toT2)) name argNames steps) =
+    do
+      ltc <- createLTConstrainst bpm constr1 constr2
+      ltt <- createLTTypes ltc fromT1 fromT2
+      fromT2N <- applyBPT ltt fromT2
+      toT2N <- applyBPT ltt toT2
+      let nextType = (GTransformType constr2 fromT2N toT2N)
+      stepsN <- backPropagateS emptyBPM nextType steps
+      return (TAbstraction (GaiwanArrow scalars nextType) name argNames stepsN)
+
+-- constraints do not mater for our transformers
+-- TODO remove duplication !
+backPropagateS :: BackPropMap ShapeVar -> GTransformType ShapeVar -> [TypedTransform] -> TypeingOut [TypedTransform]
+backPropagateS bpm (GTransformType _ fromT1 _) [] = return []
+backPropagateS
+  bpm
+  (GTransformType _ fromT1 _)
+  ((TMapper (GTransformType _ fromT2 toT2) s ss exp) : steps) =
+    do
+      ltt <- createLTTypes bpm fromT1 fromT2
+      fromT2N <- applyBPT ltt fromT2
+      toT2N <- applyBPT ltt toT2
+      let nextType = (GTransformType M.empty toT2N [])
+      stepsN <- backPropagateS emptyBPM nextType steps
+      return ((TMapper (GTransformType M.empty fromT2N toT2N) s ss exp) : stepsN)
+backPropagateS
+  bpm
+  (GTransformType _ fromT1 _)
+  ((TShaper (GTransformType _ fromT2 toT2) s ss exp) : steps) =
+    do
+      ltt <- createLTTypes bpm fromT1 fromT2
+      fromT2N <- applyBPT ltt fromT2
+      toT2N <- applyBPT ltt toT2
+      let nextType = (GTransformType M.empty toT2N [])
+      stepsN <- backPropagateS emptyBPM nextType steps
+      return ((TShaper (GTransformType M.empty fromT2N toT2N) s ss exp) : stepsN)
+backPropagateS
+  bpm
+  (GTransformType _ fromT1 _)
+  ((TReducer (GTransformType _ fromT2 toT2) s ss exp exp') : steps) =
+    do
+      ltt <- createLTTypes bpm fromT1 fromT2
+      fromT2N <- applyBPT ltt fromT2
+      toT2N <- applyBPT ltt toT2
+      let nextType = (GTransformType M.empty toT2N [])
+      stepsN <- backPropagateS emptyBPM nextType steps
+      return ((TReducer (GTransformType M.empty fromT2N toT2N) s ss exp exp') : steps)
+
+applyBPT :: BackPropMap ShapeVar -> [GaiwanBuf ShapeVar] -> TypeingOut [GaiwanBuf ShapeVar]
+applyBPT lt = mapM (applyBPT1 lt)
+
+applyBPT1 :: BackPropMap ShapeVar -> GaiwanBuf ShapeVar -> TypeingOut (GaiwanBuf ShapeVar)
+applyBPT1 bpm (GaiwanBuf size shape) = return $ GaiwanBuf (bpmSizes bpm size) (bpmBufShape bpm shape)
+
+createLTTypes :: BackPropMap ShapeVar -> [GaiwanBuf ShapeVar] -> [GaiwanBuf ShapeVar] -> TypeingOut (BackPropMap ShapeVar)
+createLTTypes bpm [] [] = return bpm
+createLTTypes
+  bpm
+  ((GaiwanBuf sizeConc shapeConc) : concreters)
+  ((GaiwanBuf sizeWeak shapeWeak) : weakers) =
+    do
+      bpm1 <- extendBPMSize bpm sizeConc sizeWeak
+      bpm2 <- extendBPMShape bpm1 shapeConc shapeWeak
+      createLTTypes bpm2 concreters weakers
+createLTTypes bpm _ _ = fail "Incompatible nuber of joined buffers, this should not happen"
+
+-- Note that we do not need to care about collisions in the map :)
+extendBPMShape :: BackPropMap ShapeVar -> GShape ShapeVar -> GShape ShapeVar -> TypeingOut (BackPropMap ShapeVar)
+extendBPMShape bpm GaiwanInt GaiwanInt = return bpm
+extendBPMShape bpm (GaiwanTuple concreter) (GaiwanTuple weaker) = foldrM (\a b -> extendBPMShape b (fst a) (snd a)) bpm (zip concreter weaker)
+extendBPMShape bpm b (TVar a) = return $ bpm {bpmShapesMap = M.insert a b (bpmShapesMap bpm)}
+extendBPMShape _ a b = fail $ "lol incompatible" ++ (show (a, b))
+
+-- xa+b = yc+d    =>   y = a/c + (b-d)/c
+extendBPMSize :: Eq a => BackPropMap a -> GaiwanBufSize a -> GaiwanBufSize a -> TypeingOut (BackPropMap a)
+extendBPMSize bpm@BackPropMap {bpmSizes = oldF} (GaiwanBufSize x a b) (GaiwanBufSize y c d) =
+  return $
+    bpm
+      { bpmSizes = \i@(GaiwanBufSize z e f) ->
+          if z == y
+            then (GaiwanBufSize x ((a * e) `div` c) ((((b - d) * e) `div` c) + f))
+            else (oldF i)
+      }
+
+-- intersectionWith :: Ord k => (a -> b -> c) -> Map k a -> Map k b -> Map k c
+
+createLTConstrainst :: BackPropMap ShapeVar -> Constraints ShapeVar -> Constraints ShapeVar -> TypeingOut (BackPropMap ShapeVar)
+createLTConstrainst bpm c1 c2 = uncurry (createLTTypes bpm) $ L.unzip $ M.elems $ M.intersectionWith (\a b -> (a, b)) c1 c2

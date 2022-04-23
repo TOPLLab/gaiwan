@@ -1,4 +1,5 @@
 {-# LANGUAGE FlexibleInstances #-}
+
 module Language.GaiwanDefs
   ( Exp (..),
     Instr (..),
@@ -26,9 +27,9 @@ module Language.GaiwanDefs
 where
 
 import Code.Definitions
+import Control.Monad.State.Lazy
 import qualified Data.Map as M
 import Data.Maybe
-import Control.Monad.State.Lazy
 
 data Instr
   = IApp String Bool [Exp]
@@ -58,10 +59,8 @@ data Exp
   | IsGreater Exp Exp
   deriving (Show, Eq)
 
-
 class Eq a => Freshable a where
   fresh :: TypeingOut a
-
 
 data Program a
   = Prog [Abstraction a] [Instr]
@@ -83,8 +82,6 @@ nextUniqv = do
 instance MonadFail (Either String) where
   fail = Left
 
-
-
 type Constraints a = M.Map String (GaiwanBuf a)
 
 data GaiwanBufSize a = GaiwanBufSize a Int Int
@@ -101,7 +98,6 @@ data GAbsType a = GaiwanArrow [GShape a] (GTransformType a)
   deriving (Show, Eq)
 
 data GBufOrShape a = ABuf (GaiwanBuf a) | AShape (GShape a) deriving (Show, Eq)
-
 
 data Stmt a
   = Mapper (Maybe (GBufOrShape a)) String (ArgList a) Exp
