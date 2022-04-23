@@ -1,6 +1,19 @@
+{-# LANGUAGE FlexibleInstances #-}
 module Language.GaiwanDefs
   ( Exp (..),
     Instr (..),
+    Constraints,
+    TypeingOut,
+    nextUniqv,
+    GaiwanBufSize (..),
+    GaiwanBuf (..),
+    GTransformType (..),
+    GAbsType (..),
+    Stmt (..),
+    ArgList (..),
+    Abstraction (..),
+    GBufOrShape (..),
+    Program (..),
     subst,
     substMult,
     substGPUBuffers,
@@ -8,11 +21,14 @@ module Language.GaiwanDefs
     simpleSubstMult,
     substArrayGet,
     simpleSubst,
+    Freshable (..),
   )
 where
 
 import Code.Definitions
+import qualified Data.Map as M
 import Data.Maybe
+import Control.Monad.State.Lazy
 
 data Instr
   = IApp String Bool [Exp]
@@ -40,6 +56,57 @@ data Exp
   | If Exp Exp Exp
   | IsEq Exp Exp
   | IsGreater Exp Exp
+  deriving (Show, Eq)
+
+
+class Eq a => Freshable a where
+  fresh :: TypeingOut a
+
+
+data Program a
+  = Prog [Abstraction a] [Instr]
+  deriving (Show, Eq)
+
+data Abstraction a = Abstraction (Maybe (GBufOrShape a)) String (ArgList a) [Stmt a]
+  deriving (Show, Eq)
+
+type ArgList a = [(String, Maybe (GBufOrShape a))]
+
+type TypeingOut = StateT Int (Either String)
+
+nextUniqv :: TypeingOut Int
+nextUniqv = do
+  uniqv <- get
+  put (uniqv + 1)
+  return uniqv
+
+instance MonadFail (Either String) where
+  fail = Left
+
+
+
+type Constraints a = M.Map String (GaiwanBuf a)
+
+data GaiwanBufSize a = GaiwanBufSize a Int Int
+  deriving (Show, Eq)
+
+data GaiwanBuf a = GaiwanBuf (GaiwanBufSize a) (GShape a)
+  deriving (Show, Eq)
+
+data GTransformType a = GTransformType (Constraints a) [GaiwanBuf a] [GaiwanBuf a]
+  deriving (Show, Eq)
+
+-- Type of a abstraction (scalar vars ,  transformtype if called)
+data GAbsType a = GaiwanArrow [GShape a] (GTransformType a)
+  deriving (Show, Eq)
+
+data GBufOrShape a = ABuf (GaiwanBuf a) | AShape (GShape a) deriving (Show, Eq)
+
+
+data Stmt a
+  = Mapper (Maybe (GBufOrShape a)) String (ArgList a) Exp
+  | Reducer (Maybe (GBufOrShape a)) String (ArgList a) Exp Exp
+  | Shaper (Maybe (GBufOrShape a)) String (ArgList a) Exp
   deriving (Show, Eq)
 
 simpleSubst :: Exp -> Exp -> Exp -> Exp

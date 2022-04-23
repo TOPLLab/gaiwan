@@ -39,6 +39,7 @@ library
       Language.GaiwanTypes
       CodeGen.Pipelining
       --CodeGen.Render
+      Language.AlphaRename
       Language.Gaiwan
       Language.GaiwanDefs
       Language.Tokens

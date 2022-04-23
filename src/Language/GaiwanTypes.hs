@@ -1,19 +1,16 @@
-{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE FlexibleInstances #-}
 
 module Language.GaiwanTypes
   ( Program (..),
     TypedProgram (..),
-    Stmt (..),
     AbstType (..),
     GAbsType (..),
     GTransformType (..),
-    Abstraction (..),
     GShape (..),
     TypedTransform (..),
     TypedAbstraction (..),
     TypedInstr (..),
-    TypeingOut,
     VarFreeStmtType (..),
     GBufOrShape (..),
     GBufOrShapeDefault,
@@ -36,33 +33,23 @@ import Data.Foldable
 import Data.Functor
 import qualified Data.List as L
 import qualified Data.Map as M
+import Language.AlphaRename
 import Data.Maybe
 --import Debug.Trace
 import Language.GaiwanDefs
 
 data Void -- needed for var free types
 
--- Type of a abstraction (scalar vars ,  transformtype if called)
-data GAbsType a = GaiwanArrow [GShape a] (GTransformType a)
-  deriving (Show, Eq)
-
-data GaiwanBufSize a = GaiwanBufSize a Int Int
-  deriving (Show, Eq)
 
 -- Type of a buffer
-data GaiwanBuf a = GaiwanBuf (GaiwanBufSize a) (GShape a)
-  deriving (Show, Eq)
 
 type GaiwanBufDefault = GaiwanBuf ShapeVar
 
 -- Type of a transformation on buffers
 -- (constrainsts are only used for typing retun, GTransformType contraints [] outBufs)
-data GTransformType a = GTransformType (Constraints a) [GaiwanBuf a] [GaiwanBuf a]
-  deriving (Show, Eq)
+type TransformType = GTransformType ShapeVar
 
-type Constraints a = M.Map String (GaiwanBuf a)
 
-data GBufOrShape a = ABuf (GaiwanBuf a) | AShape (GShape a) deriving (Show, Eq)
 
 type GBufOrShapeDefault = GBufOrShape ShapeVar
 
@@ -78,7 +65,6 @@ type AbstType = GAbsType ShapeVar
 
 type ShapeVar = Int
 
-type TransformType = GTransformType ShapeVar
 
 type StmtShape = GShape ShapeVar
 
@@ -86,16 +72,10 @@ type Tag a = (Int, a)
 
 type TaggedStmtType a = GBufOrShape (Tag a)
 
-type TypeingOut = StateT Int (Either String)
-
-instance MonadFail (Either String) where
-  fail = Left
 
 class Eq a => Tagable a where
   untagify :: Tag a -> a
 
-class Eq a => Freshable a where
-  fresh :: TypeingOut a
 
 instance Freshable ShapeVar where
   fresh = nextUniqv
@@ -164,128 +144,7 @@ checkType (Prog s e) = (`evalStateT` 0) $ do
   resultType <- mergeTList (map typedInstr typedInstrs)
   return $ TypedProg resultType typedInstrs
 
--- Alpha rename types
-alphaRenameAbstType :: AbstType -> TypeingOut AbstType
-alphaRenameAbstType (GaiwanArrow argShapes (GTransformType map types1 types2)) | M.size map == 0 =
-  do
-    lt <- growAlphaLT2 M.empty types1
-    argShapes' <- mapM (applyAphaLT lt) argShapes
-    types1' <- mapM (applyAphaLT2 lt) types1
-    types2' <- mapM (applyAphaLT2 lt) types2
-    return (GaiwanArrow argShapes' (GTransformType M.empty types1' types2'))
-alphaRenameAbstType (GaiwanArrow argShapes _) = fail "Could not type GaiwanArrow with contraints, these should never have containts"
 
-applyAphaLT2 :: M.Map ShapeVar ShapeVar -> GaiwanBuf ShapeVar -> TypeingOut (GaiwanBuf ShapeVar)
-applyAphaLT2 lt (GaiwanBuf exp gs) = do
-  gs' <- applyAphaLT lt gs
-  return (GaiwanBuf exp gs')
-
-growAlphaLT2 :: M.Map ShapeVar ShapeVar -> [GaiwanBuf ShapeVar] -> TypeingOut (M.Map ShapeVar ShapeVar)
-growAlphaLT2 lt [] = return lt
-growAlphaLT2 lt ((GaiwanBuf exp gs) : xr) = do
-  lt' <- growLTSingle gs lt
-  growAlphaLT2 lt' xr
-
--- | Apply alpha renaming to a shape
--- This will be used storing the value in the TypeingOut monad
--- This will ensure that every time the value is obtained, it is renamed
-alphaRename :: (Ord s, Show s) => Abstraction s -> TypeingOut AbstractionDefault
-alphaRename (Abstraction m_gbos name args steps) = do
-  steps' <- mapM doAlphaRename steps
-  lt <- createAlphaLT args
-  m_gbos' <- applyAphaLTMaybe lt m_gbos
-  args' <- mapM (applyAphaLTArg lt) args
-  return $ Abstraction m_gbos' name args' steps'
-
-doAlphaRename :: (Ord s, Show s) => Stmt s -> TypeingOut (Stmt ShapeVar)
-doAlphaRename (Mapper m_gbos str x0 exp) = do
-  lt' <- createAlphaLT x0
-  m_gbos' <- applyAphaLTMaybe lt' m_gbos
-  x0' <- mapM (applyAphaLTArg lt') x0
-  return $ Mapper m_gbos' str x0' exp
-doAlphaRename (Reducer m_gbos str x0 exp exp') = do
-  lt' <- createAlphaLT x0
-  m_gbos' <- applyAphaLTMaybe lt' m_gbos
-  x0' <- mapM (applyAphaLTArg lt') x0
-  return $ Reducer m_gbos' str x0' exp exp'
-doAlphaRename (Shaper m_gbos str x0 exp) = do
-  lt' <- createAlphaLT x0
-  m_gbos' <- applyAphaLTMaybe lt' m_gbos
-  x0' <- mapM (applyAphaLTArg lt') x0
-  return $ Shaper m_gbos' str x0' exp
-
-applyAphaLTArg :: (Ord s, Show s) => (M.Map s ShapeVar, M.Map s ShapeVar) -> (String, Maybe (GBufOrShape s)) -> TypeingOut (String, Maybe (GBufOrShape ShapeVar))
-applyAphaLTArg (lt, ltS) (name, ty) = do
-  v <- applyAphaLTMaybe (lt, ltS) ty
-  return (name, v)
-
-applyAphaLTMaybe :: (Ord s, Show s) => (M.Map s ShapeVar, M.Map s ShapeVar) -> Maybe (GBufOrShape s) -> TypeingOut (Maybe (GBufOrShape ShapeVar))
-applyAphaLTMaybe (lt, ltS) Nothing = return Nothing
-applyAphaLTMaybe (lt, ltS) (Just (ABuf (GaiwanBuf exp gs))) = do
-  renamedShape <- applyAphaLT lt gs
-  renamedSize <- applyAphaLTS ltS exp
-  return $ Just $ ABuf (GaiwanBuf renamedSize renamedShape)
-applyAphaLTMaybe (lt, ltS) (Just (AShape gs)) = applyAphaLT lt gs <&> Just . AShape
-
-applyAphaLTS :: (Ord s, Show s) => M.Map s ShapeVar -> GaiwanBufSize s -> TypeingOut (GaiwanBufSize ShapeVar)
-applyAphaLTS lt (GaiwanBufSize varName 0 intercept) = do
-  maybe
-    ( do
-        nn <- fresh
-        return $ GaiwanBufSize nn 0 intercept
-    )
-    (\nn -> return $ GaiwanBufSize nn 0 intercept)
-    (M.lookup varName lt)
-applyAphaLTS lt (GaiwanBufSize varName slope intercept) =
-  maybe
-    (fail $ "Could not find " ++ show varName ++ " in applyAphaLTS " ++ show lt)
-    (\nn -> return $ GaiwanBufSize nn slope intercept)
-    (M.lookup varName lt)
-
-applyAphaLT :: (Ord s, Show s) => M.Map s ShapeVar -> GShape s -> TypeingOut (GShape ShapeVar)
-applyAphaLT lt GaiwanInt = return GaiwanInt
-applyAphaLT lt (GaiwanTuple gss) = mapM (applyAphaLT lt) gss <&> GaiwanTuple
-applyAphaLT lt (TVar a) = maybe (fail $ "Could not find " ++ show a ++ " in applyAphaLT " ++ show lt) (return . TVar) (M.lookup a lt)
-
-createAlphaLT :: (Ord s) => ArgList s -> TypeingOut (M.Map s ShapeVar, M.Map s ShapeVar)
-createAlphaLT = growAlphaLT M.empty M.empty
-
-growAlphaLT :: (Ord s) => M.Map s ShapeVar -> M.Map s ShapeVar -> ArgList s -> TypeingOut (M.Map s ShapeVar, M.Map s ShapeVar)
-growAlphaLT lt ltS [] = return (lt, ltS)
-growAlphaLT lt ltS ((s, Nothing) : xr) = growAlphaLT lt ltS xr
-growAlphaLT lt ltS ((s, Just bufOrShape) : xr) = do
-  lt' <- growLTSingle (collectShape bufOrShape) lt
-  ltS' <- growLTSingleVar (collectSizeVar bufOrShape) ltS
-  growAlphaLT lt' ltS' xr
-
-growLTSingleVar :: (Ord s) => Maybe s -> M.Map s ShapeVar -> TypeingOut (M.Map s ShapeVar)
-growLTSingleVar Nothing ltS = return ltS
-growLTSingleVar (Just v) ltS | M.member v ltS = return ltS
-growLTSingleVar (Just v) ltS = do
-  newName <- fresh
-  return $ M.insert v newName ltS
-
-collectShape :: GBufOrShape a -> GShape a
-collectShape (ABuf (GaiwanBuf _ gs)) = gs
-collectShape (AShape gs) = gs
-
-collectSizeVar :: GBufOrShape a -> Maybe a
-collectSizeVar (ABuf (GaiwanBuf (GaiwanBufSize name _ _) _)) = Just name
-collectSizeVar (AShape gs) = Nothing
-
-growLTSingle :: (Ord s) => GShape s -> M.Map s ShapeVar -> TypeingOut (M.Map s ShapeVar)
-growLTSingle GaiwanInt lt = return lt
-growLTSingle (GaiwanTuple gss) lt = foldrM growLTSingle lt gss
-growLTSingle (TVar str) lt | M.member str lt = return lt
-growLTSingle (TVar str) lt = do
-  newName <- nextUniqv
-  return $ M.insert str newName lt
-
-nextUniqv :: TypeingOut Int
-nextUniqv = do
-  uniqv <- get
-  put (uniqv + 1)
-  return uniqv
 
 nextUniqvBuf :: TypeingOut (GaiwanBuf ShapeVar)
 nextUniqvBuf = do
@@ -362,12 +221,6 @@ lookupAbst name (_ : sr) = lookupAbst name sr
 abstrName :: TypedAbstraction -> String
 abstrName (TAbstraction _ name _ _) = name
 
-data Program a
-  = Prog [Abstraction a] [Instr]
-  deriving (Show, Eq)
-
-data Abstraction a = Abstraction (Maybe (GBufOrShape a)) String (ArgList a) [Stmt a]
-  deriving (Show, Eq)
 
 type ProgramDefault = Program ShapeVar
 
@@ -375,13 +228,6 @@ type StmtDefault = Stmt ShapeVar
 
 type AbstractionDefault = Abstraction ShapeVar
 
-type ArgList a = [(String, Maybe (GBufOrShape a))]
-
-data Stmt a
-  = Mapper (Maybe (GBufOrShape a)) String (ArgList a) Exp
-  | Reducer (Maybe (GBufOrShape a)) String (ArgList a) Exp Exp
-  | Shaper (Maybe (GBufOrShape a)) String (ArgList a) Exp
-  deriving (Show, Eq)
 
 stmt :: forall t. TypedTransform -> (TransformType -> String -> [String] -> t) -> t
 stmt (TShaper a b c _) f = f a b c

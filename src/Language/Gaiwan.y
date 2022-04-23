@@ -58,11 +58,11 @@ Program : AbstrList Exp                                     { Prog $1 $2 }
 
 Stmt :: { Stmt String }
 Stmt  :  function var '(' varlist ')' maybetype StmtBody    { mkFun $1 $6 $2  (reverse $4) $7 }
-      |  reducer  var '(' varlist ')' maybetype '(' ExpBase ')' StmtBody { Language.GaiwanTypes.Reducer $6 $2 (reverse $4)  $8 $10 }
+      |  reducer  var '(' varlist ')' maybetype '(' ExpBase ')' StmtBody { Language.GaiwanDefs.Reducer $6 $2 (reverse $4)  $8 $10 }
 
 Abstr :: { Abstraction String }
-Abstr : abstraction var '(' varlist ')' maybetype bracO   pipedStmt bracC  { Language.GaiwanTypes.Abstraction $6 $2 (reverse $4) (reverse $8) }
-      | abstraction var '('         ')' maybetype bracO   pipedStmt bracC  { Language.GaiwanTypes.Abstraction $5 $2 [] (reverse $7) }
+Abstr : abstraction var '(' varlist ')' maybetype bracO   pipedStmt bracC  { Language.GaiwanDefs.Abstraction $6 $2 (reverse $4) (reverse $8) }
+      | abstraction var '('         ')' maybetype bracO   pipedStmt bracC  { Language.GaiwanDefs.Abstraction $5 $2 [] (reverse $7) }
 
 AbstrList :: {[Abstraction String ] }
 AbstrList : {[] }
@@ -170,8 +170,8 @@ mkApp (Var name builtin) = App name builtin
 appToInstr  (App name builtin args)  = IApp name builtin args
 
 mkFun :: FunctionType -> (Maybe (GBufOrShape a)) -> String -> [(String, Maybe (GBufOrShape a))] -> Exp -> Stmt a
-mkFun Language.Tokens.Mapper   =  Language.GaiwanTypes.Mapper
-mkFun Language.Tokens.Shaper =  Language.GaiwanTypes.Shaper
+mkFun Language.Tokens.Mapper   =  Language.GaiwanDefs.Mapper
+mkFun Language.Tokens.Shaper =  Language.GaiwanDefs.Shaper
 
 parseGaiwan :: String -> Either String (Program String)
 parseGaiwan s = runAlex s gaiwanParse
