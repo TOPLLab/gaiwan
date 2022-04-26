@@ -46,7 +46,7 @@ let
     ghc
     clang-tools # for C formatting
     nodePackages.prettier
-    haskellPackages.profiteur # treemap of profile
+    # haskellPackages.profiteur # treemap of profile
     pkgs.opencl-clhpp # for cl2.hpp
     pkgs.ormolu
     pkgs.python3
