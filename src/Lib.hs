@@ -40,10 +40,11 @@ checkParse =
 
 -- Output a bytestring
 compile :: String -> Either String BS.ByteString
-compile =
-  eitherParseGaiwan
-    (\err -> Left $ "Parsing failed: " ++ err)
-    (Right . uncurry Code.serialize . Code.compile . mkCode) -- todo make either
+compile = undefined
+
+--  eitherParseGaiwan
+--    (\err -> Left $ "Parsing failed: " ++ err)
+--    (Right . uncurry Code.serialize . Code.compile . mkCode) -- todo make either
 
 mkCode (Prog defines main) =
   undefined

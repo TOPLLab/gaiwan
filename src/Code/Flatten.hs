@@ -23,28 +23,36 @@ flattenBuffers :: [GPUAction] -> [GPUAction]
 flattenBuffers actions = assignBuffers actionsAndNeed
   where
     -- Transform list of `action` to list of (`action`, buffers needed)
-    -- Where buffers needed is a set uf buffers that might be read in the future
+    -- Where buffers needed is a set of buffers that might be read in the future
     actionsAndNeed = fst $ L.foldr foldrWithNeed ([], S.empty) actions
 
-    foldrWithNeed :: GPUAction -> ([(GPUAction, Set GPUBuffer)], Set GPUBuffer) -> ([(GPUAction, Set GPUBuffer)], Set GPUBuffer)
-    foldrWithNeed action@(ReadBuffer buf) (acc, need) =
-      let neededBufs = insert buf need
-       in ((action, neededBufs) : acc, neededBufs)
-    foldrWithNeed action@(CallKernel name usedBuffers writtenBuffers threads) (acc, need) =
+    foldrWithNeed ::
+      GPUAction -> -- current Action
+      ( [(GPUAction, Set ReservedBuffer)], -- Next actions and the buffers they need themselves (for reading or writing)
+        Set ReservedBuffer -- Buffers whose value are needed by future actions (for reading)
+      ) ->
+      ([(GPUAction, Set ReservedBuffer)], Set ReservedBuffer)
+    foldrWithNeed action@(ReadBuffer todoUseName buf) (acc, need) =
+      let neededBufs = difference neededBufs (fromList [buf])
+       in ((action, fromList [buf]) : acc, neededBufs)
+    foldrWithNeed action@(OutputBuffer buffers) (acc, need) =
+      let neededBufs = union need (fromList buffers)
+       in ((action, fromList buffers) : acc, neededBufs)
+    foldrWithNeed action@(CallKernel name usedBuffers writtenBuffers) (acc, need) =
       let neededBufs = union need $ fromList usedBuffers
-       in ((action, neededBufs) : acc, difference neededBufs (fromList writtenBuffers))
+       in ((action, fromList (usedBuffers ++ writtenBuffers)) : acc, difference neededBufs (fromList writtenBuffers))
     foldrWithNeed action (acc, need) = ((action, need) : acc, need) -- todo remove
-    assignBuffers :: [(GPUAction, Set GPUBuffer)] -> [GPUAction]
+    assignBuffers :: [(GPUAction, Set ReservedBuffer)] -> [GPUAction]
     assignBuffers x = reverse $ fst $ L.foldl' assignBufFold ([], (S.empty, [])) x
 
     assignBufFold ::
       ( [GPUAction], -- collected actions
-        ( Set GPUBuffer, -- Free buffers
-          [(GPUBuffer, GPUBuffer)] -- Current buffer mapping
+        ( Set ReservedBuffer, -- Free buffers
+          [(ReservedBuffer, ReservedBuffer)] -- Current buffer mapping
         )
       ) ->
-      (GPUAction, Set GPUBuffer) ->
-      ([GPUAction], (Set GPUBuffer, [(GPUBuffer, GPUBuffer)]))
+      (GPUAction, Set ReservedBuffer) ->
+      ([GPUAction], (Set ReservedBuffer, [(ReservedBuffer, ReservedBuffer)]))
     assignBufFold (acc, (free, mapping)) (action, needed) =
       let a = map (\x -> (x, lookup x mapping)) $ toList needed
        in let (free1, mapping1) = L.foldr assign (free, mapping) a
@@ -57,23 +65,31 @@ flattenBuffers actions = assignBuffers actionsAndNeed
 
     -- Apply a mappign of GPUBuffers to a GPU action
     -- Assumes that all mentioned GPU buffers are assigned in the mapping
-    translate :: [(GPUBuffer, GPUBuffer)] -> GPUAction -> GPUAction
-    translate m (ReadBuffer buf) =
-      ReadBuffer $ justLookup m buf
-    translate m (CallKernel name usedBuffers writtenBuffers threads) =
+    translate :: [(ReservedBuffer, ReservedBuffer)] -> GPUAction -> GPUAction
+    translate m (ReadBuffer name buf) =
+      ReadBuffer name $ justLookup m buf
+    translate m (CallKernel name usedBuffers writtenBuffer) =
       CallKernel
         name
         (map (justLookup m) usedBuffers)
-        (map (justLookup m) writtenBuffers)
-        threads
-    translate m b = b -- todo : remove
+        (map (justLookup m) writtenBuffer)
+    translate m (AllocBuffer {}) = error "Flatten should not be used if there are already allocated buffers!"
+    translate m (OutputBuffer buffers) = OutputBuffer (map (justLookup m) buffers)
+    translate m x@(Infoz {}) = x
 
     -- Assign
     -- returns (currently free buffers, current lookup table)
-    assign :: (GPUBuffer, Maybe GPUBuffer) -> (Set GPUBuffer, [(GPUBuffer, GPUBuffer)]) -> (Set GPUBuffer, [(GPUBuffer, GPUBuffer)])
+    assign ::
+      (ReservedBuffer, Maybe ReservedBuffer) ->
+      ( Set ReservedBuffer, -- currently free
+        [(ReservedBuffer, ReservedBuffer)] -- mappings made
+      ) ->
+      ( Set ReservedBuffer, -- new free
+        [(ReservedBuffer, ReservedBuffer)] -- new mapping
+      )
     assign (_, Just _) (free, table) = (free, table) -- do nothing if found
-    assign (ins@(GPUBuffer name _ size), Nothing) (free, table) =
-      case lookupMin $ S.filter (\(GPUBuffer _ _ s) -> s == size) free of
+    assign (ins@(ReservedBuffer shape size), Nothing) (free, table) =
+      case lookupMin $ S.filter (\b -> b == ins) free of
         Just b -> (delete b free, (ins, b) : table) -- use if free availible
         Nothing -> (free, (ins, ins) : table) -- new if not
 

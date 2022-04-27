@@ -76,13 +76,13 @@ StmtBody :: { Exp }
 StmtBody : bracO ExpBase bracC  {$2 }
 
 ExpKinds :: { Instr }
-ExpKinds : ExpApp                                           { (appToInstr $1) :: Instr }
+ExpKinds : ExpApp                                           { $1 :: Instr }
          | ExpLoop                                          { $1  :: Instr }
          | let var '=' bracO Exp bracC
            in bracO Exp bracC                               { (LetB $2 $5 $9) }
          | return var                                       { (Return [$2]) }
 
-ExpApp :: { Exp }
+ExpApp :: { Instr }
 ExpApp : avar '(' explist ')'                               { mkApp $1 (reverse $3) }
        | avar '(' ')'                                       { mkApp $1 [] }
 
@@ -141,8 +141,7 @@ BracExp :: { Exp }
 BracExp : bracO ExpBase bracC                               { $2 }
 
 ExpBase :: { Exp }
-ExpBase : ExpApp                                            { $1 }
-        | ExpBase '%' ExpBase                               { Modulo $1 $3 }
+ExpBase : ExpBase '%' ExpBase                               { Modulo $1 $3 }
         | tuple '(' explist ')'                             { Tuple (reverse $3) }
         | ExpBase '[' '[' int  ']' ']'                      { Select $1 $4 }
         | ExpBase '+' ExpBase                               { Plus $1 $3 }
@@ -165,9 +164,7 @@ stmtList :                                                  { [] }
          | stmtList Stmt                                    { $2 : $1 }
 {
 
-mkApp (Var name builtin) = App name builtin
-
-appToInstr  (App name builtin args)  = IApp name builtin args
+mkApp (Var name builtin) = IApp name builtin
 
 mkFun :: FunctionType -> (Maybe (GBufOrShape a)) -> String -> [(String, Maybe (GBufOrShape a))] -> Exp -> Stmt a
 mkFun Language.Tokens.Mapper   =  Language.GaiwanDefs.Mapper

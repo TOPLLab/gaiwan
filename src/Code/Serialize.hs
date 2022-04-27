@@ -29,7 +29,7 @@ deserialize e = decodeTriple e >>= checkMagic
 -- JSON definition below
 
 instance ToJSON GPUAction where
-  toJSON (ReadBuffer b) = object ["read" .= b]
+  toJSON (ReadBuffer name b) = object ["read" .= b, "src" .= name]
   toJSON (CallKernel name bufs outbufs threads) =
     object
       [ "call" .= name,
@@ -41,10 +41,11 @@ instance ToJSON GPUAction where
         "threads" .= threads
       ]
   toJSON (AllocBuffer buffer) = object ["alloc" .= buffer]
+  toJSON (Infoz _) = Null
 
 instance FromJSON GPUAction where
   parseJSON (Object v) =
-    (ReadBuffer <$> v .: "read")
+    (ReadBuffer <$> (v .: "src") <*> v .: "read")
       <|> ( CallKernel
               <$> v .: "call"
               <*> ((v .: "buffers") >>= (.: "used"))

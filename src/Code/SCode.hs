@@ -3,6 +3,7 @@ module Code.SCode
     SCode (),
     addDeviceCode,
     addHostCode,
+    addHostReadBuffer,
     registerKernel,
     freshKernelName,
     getKernels,
@@ -28,8 +29,9 @@ data Code a = Code
     hostCode :: [GPUAction], -- Plan for the host
     nameCount :: Int, -- For unique kernel names
     defs :: [TypedTransform], -- Defnitions to be used in the program
-    kernels :: [(([Exp], [GPUBuffer], [GPUBuffer]), KernelName)], -- Put kernels here
-    bufferCount :: Int -- For unique buffer names
+    kernels :: [(([BExp], [ReservedBuffer], [ReservedBuffer]), KernelName)], -- Put kernels here
+    bufferCount :: Int, -- For unique buffer names
+    readBuffers :: [(String, ReservedBuffer)] -- mapping of already read buffers by their inport namew
   }
   deriving (Show)
 
@@ -43,13 +45,14 @@ execCode s =
         nameCount = 0,
         defs = [],
         kernels = [],
-        bufferCount = 0 -- mkCode should be here
+        bufferCount = 0, -- mkCode should be here
+        readBuffers = []
       }
 
-freshGPUBuffer :: GShapeNoVar -> Int -> SCode b GPUBuffer
-freshGPUBuffer shape size = do
+freshGPUBuffer :: GaiwanBuf Int -> SCode b ReservedBuffer
+freshGPUBuffer buf@(GaiwanBuf size shape) = do
   name <- freshGPUBufferName
-  return $ GPUBuffer name shape size
+  return $ ReservedBuffer name buf
 
 freshGPUBufferName :: SCode b GPUBufferName
 freshGPUBufferName = do
@@ -74,6 +77,12 @@ addHostCode s =
     ( \old@Code {hostCode = dc} -> old {hostCode = dc ++ [s]}
     )
 
+addHostReadBuffer :: String -> GaiwanBuf Int -> SCode b ReservedBuffer
+addHostReadBuffer name buf = do
+  b <- freshGPUBuffer buf
+  addHostCode (ReadBuffer name b)
+  return b
+
 addDeviceCode :: (Monoid b) => b -> SCode b ()
 addDeviceCode s =
   modify
@@ -87,11 +96,11 @@ freshKernelName = do
   put old {nameCount = nc + 1}
   return $ KernelName $ "kernel" ++ show nc
 
-registerKernel :: [Exp] -> [GPUBuffer] -> [GPUBuffer] -> KernelName -> SCode b ()
+registerKernel :: [BExp] -> [ReservedBuffer] -> [ReservedBuffer] -> KernelName -> SCode b ()
 registerKernel exps buffers buffersout name =
   modify
     ( \old@Code {kernels = ks} -> old {kernels = ((exps, buffers, buffersout), name) : ks}
     )
 
-getKernels :: SCode b [(([Exp], [GPUBuffer], [GPUBuffer]), KernelName)]
+getKernels :: SCode b [(([BExp], [ReservedBuffer], [ReservedBuffer]), KernelName)]
 getKernels = kernels <$> get

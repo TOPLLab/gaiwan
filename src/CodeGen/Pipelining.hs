@@ -2,12 +2,13 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TupleSections #-}
 
-module CodeGen.Pipelining (Pipeline, collectBuffers, convertPls, makePlan) where
+module CodeGen.Pipelining (collectBuffers, convertPls, makePlan) where
 
 -- The idea is to transform a list of shuffles and maps into a list of maps (containing array)
 
 import Code
 import Code.Definitions
+import CodeGen.CLike
 import Control.Lens
 import Control.Monad
 import Data.Either
@@ -15,68 +16,93 @@ import Data.Foldable
 import Data.List
 import Data.Maybe
 import qualified Data.Set as Set
+import Debug.Trace
 import Language.GaiwanDefs
 import Language.GaiwanTypes
 
-data PipelineStep = PipelineStep
-  { _buffer :: Maybe GPUBuffer,
-    _expVal :: Exp
-  }
+data PipelineStep = PipelineStep [(GaiwanBuf Int, BExp)]
   deriving (Show)
-
-makeLenses ''PipelineStep
-
-data Pipeline = Pipeline
-  { _shuffle :: Exp, -- Shuffle to apply to the _expValue of the _curExp → Sets the index to write to in the specified buffer?
-    _curExp :: PipelineStep, -- TODO: should be a LIST
-    _doneExps :: [PipelineStep]
-    -- _curSize :: Int -- todo: what is the point of this field?
-  }
-  deriving (Show)
-
-makeLenses ''Pipeline
 
 -- | Get a list of used GPUBuffers
-collectBuffers :: [PipelineStep] -> [GPUBuffer]
+collectBuffers :: [PipelineStep] -> [ReservedBuffer]
 collectBuffers p = undefined
 
 convertPls = undefined
 
 type TmpCode a = SCode String a
 
+-- helper function for only testing the plan
 makePlan :: TypedProgram -> [GPUAction]
-makePlan p = snd $ compile $ execCode $ makePlanning p
+makePlan p = (\x -> (Infoz (fst x) : (snd x))) $ compile $ execCode $ makePlanning p
 
 makePlanning :: TypedProgram -> TmpCode ()
-makePlanning (TypedProg _ actions) = do
-  da <- foldM processActions emptyPlan actions
-  addHostCode $ Infoz $ show da
-  return ()
+makePlanning (TypedProg (GTransformType contraints fromT toT) actions) =
+  do
+    da <- foldlM processActions emptyPlan actions
+    resultBuffers <- toKernel da
+    addHostCode $ (OutputBuffer resultBuffers)
+    return ()
+
+toKernel :: PlanData -> TmpCode [ReservedBuffer]
+toKernel (PipelineStep results) = do
+  let argBufs = Set.toList $ getBuffers (map snd results)
+  outBuf <- mapM freshGPUBuffer (map fst results)
+  fName <- addDeviceKernel mkCode kernelTemplate (map snd results) argBufs outBuf
+  addHostCode $ CallKernel fName argBufs outBuf
+  return outBuf
+
+gpuBufferSize :: ReservedBuffer -> GaiwanBufSize Int
+gpuBufferSize (ReservedBuffer _ (GaiwanBuf gbs _)) = gbs
+
+getBuffers :: [BExp] -> Set.Set ReservedBuffer
+getBuffers = foldr addUsed Set.empty
+  where
+    addUsed :: BExp -> Set.Set ReservedBuffer -> Set.Set ReservedBuffer
+    addUsed (Let s ge' ge2) = addUsed ge' . addUsed ge2
+    addUsed (Plus ge' ge2) = addUsed ge' . addUsed ge2
+    addUsed (Minus ge' ge2) = addUsed ge' . addUsed ge2
+    addUsed (Modulo ge' ge2) = addUsed ge' . addUsed ge2
+    addUsed (Times ge' ge2) = addUsed ge' . addUsed ge2
+    addUsed (Pow ge' ge2) = addUsed ge' . addUsed ge2
+    addUsed (Div ge' ge2) = addUsed ge' . addUsed ge2
+    addUsed (Int n) = id
+    addUsed (Tuple ges) = Set.union (getBuffers ges)
+    addUsed (Select ge' n) = addUsed ge'
+    addUsed (Var s b) = id
+    addUsed (Negate ge') = addUsed ge'
+    addUsed (ArrayGet ge' ge2) = error "Shoud not occur"
+    addUsed (GPUBufferGet rb ge') = Set.insert rb . addUsed ge'
+    addUsed (If ge' ge2 ge3) = addUsed ge' . addUsed ge2 . addUsed ge3
+    addUsed (IsEq ge' ge2) = addUsed ge' . addUsed ge2
+    addUsed (IsGreater ge' ge2) = addUsed ge' . addUsed ge2
 
 type PlanData = PipelineStep
 
 -- Substiute a for b in c (with instructions)
-substTI :: Exp -> Exp -> TypedInstr -> TypedInstr
+substTI :: VarSpecifier -> Exp -> TypedInstr -> TypedInstr
 substTI from to = substMultTI [(from, to)]
 
 --
 -- Don't map the ts of app
-substMultTI :: [(Exp, Exp)] -> TypedInstr -> TypedInstr
+substMultTI :: [(VarSpecifier, Exp)] -> TypedInstr -> TypedInstr
 substMultTI kv (TLoop st cnt varname instrs) = TLoop st (simplifyExp $ substMult kv cnt) varname (map (substMultTI newKv) instrs)
   where
-    newKv = filter (\(k, _) -> k /= Var varname False) kv
+    newKv = filter (\((k, False), _) -> k /= varname) kv
 substMultTI kv (TIApp t ts args) = TIApp t ts (map (simpleSubstMult kv) args)
 
 emptyPlan :: PlanData
-emptyPlan =
-  PipelineStep
-    { _buffer = Nothing,
-      _expVal = Int 1
-    }
+emptyPlan = PipelineStep []
 
 -- TODO check arg length at typechecking
 
 processActions :: PlanData -> TypedInstr -> TmpCode PlanData
+processActions pd@(PipelineStep b) (TReturn (GTransformType contrainst fT tT) buffers) | length b == 0 = do
+  let nameBuffer = zip buffers tT
+  readBuffers <- mapM (uncurry addHostReadBuffer) nameBuffer
+  return $ PipelineStep (map readToAccess readBuffers)
+  where
+    readToAccess :: ReservedBuffer -> (GaiwanBuf Int, BExp)
+    readToAccess a@(ReservedBuffer gbn gb) = (gb, (GPUBufferGet a theI))
 processActions pd (TIApp zz (TAbstraction t _ argnames body) argvalues) | length argnames == length argvalues =
   do
     let kv = zip argnames argvalues
@@ -86,7 +112,7 @@ processActions foldData (TLoop _ (Int cnt) varname steps) =
   foldM
     processActions
     foldData
-    $ concatMap (\i -> map (substTI (Var varname False) (Int i)) steps) [0 .. (cnt -1)]
+    $ concatMap (\i -> map (substTI (varname, False) (Int i)) steps) [0 .. (cnt - 1)]
 processActions _ e = error $ "help " ++ show e
 
 substMultStmt :: [(String, Exp)] -> TypedTransform -> TypedTransform
@@ -94,28 +120,40 @@ substMultStmt kv (TShaper t name args exp) = TShaper t name args (substExcept kv
 substMultStmt kv (TMapper t name args exp) = TMapper t name args (substExcept kv args exp)
 substMultStmt kv (TReducer t name args init exp) = TReducer t name args (substExcept kv args init) (substExcept kv args exp)
 
+substExcept :: [(String, Exp)] -> [String] -> Exp -> Exp
 substExcept kv args = simpleSubstMult (kvExcept args kv)
 
-kvExcept args kv = map (\(k, vv) -> (Var k False, vv)) $ kvExceptBase args kv
+kvExcept :: [String] -> [(String, Exp)] -> [(VarSpecifier, Exp)]
+kvExcept args kv = map (\(k, vv) -> ((k, False), vv)) $ kvExceptBase args kv
 
 kvExceptBase :: Eq a => [a] -> [(a, b)] -> [(a, b)]
 kvExceptBase args = filter (\(k, _) -> k `notElem` args)
 
 theI = Var "i" True
 
-substByTheI x = simpleSubst (Var x False) theI
+substByTheI :: String -> BExp -> BExp
+substByTheI x = simpleSubst (x, False) theI
 
+substTheIBy a b = subst ("i", True) a b
+
+toBExp :: Exp -> BExp
+toBExp e = mapExp (const Nothing) e
+
+traceThis x a = a
+
+-- TODO check for duplicates argument names in typing
 processApplication :: PlanData -> TypedTransform -> TmpCode PlanData
-processApplication pd (TShaper t name [iname] exp) = do
+processApplication (PipelineStep inputs) (TShaper (GTransformType contraints fromT [toT]) name (iname : bufferArgs) exp) | length inputs == length bufferArgs = do
   --addHostCode $ Infoz $ "add call to shaper " ++ name ++ "(XXX)"
-  return $ pd & expVal .~ substByTheI iname exp
-processApplication pd (TShaper t name [iname, dname] exp) = do
-  -- TODO more than one buffer
-  --addHostCode $ Infoz $ "add call to shaper " ++ name ++ "("++intercalate "," [iname,dname]++")"
-  return $ pd & expVal %~ \old -> substByTheI iname $ substArrayGet dname (\index -> simpleSubst theI index old) exp
-processApplication pd (TMapper t name [iname, dname] exp) = do
-  --addHostCode $ Infoz $ "add call to  " ++ name ++ "()"
-  return $ pd & expVal %~ \old -> substByTheI iname (simpleSubst (Var dname False) old exp)
+  return $ PipelineStep [(toT, foldr f (substByTheI iname (toBExp exp)) (zip bufferArgs inputs))]
+  where
+    f (argName, (_, buf)) expy = traceThis "substArrrayGet ->" $ substArrayGet argName (g buf) (traceThis "Input to subst =>" expy)
+
+    g :: BExp -> BExp -> BExp
+    g realArrayBufExp usedIndexInShpr = traceThis "OKKKKKKKKKKKKKKKKKKKK" $ substTheIBy (traceThis "AAAAAAAAA" usedIndexInShpr) (traceThis "BBBBBBBB" realArrayBufExp)
+processApplication (PipelineStep [(_, input)]) (TMapper (GTransformType contraints [fromT] [toT]) name [iname, dname] exp) = do
+  -- addHostCode $ Infoz $ "add call to  " ++ name ++ "()"
+  return $ PipelineStep [(toT, simpleSubstMult [((iname, False), theI), ((dname, False), input)] (toBExp exp))]
 processApplication _ a = error $ show a
 
 --processApplication pd (TAbstraction t _ [] body) =

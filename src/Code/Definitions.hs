@@ -2,51 +2,38 @@
 
 module Code.Definitions
   ( GPUBufferName (..),
-    GPUBuffer (..),
     GPUAction (..),
-    gpuBufferSize,
+    ReservedBuffer (..),
     KernelName (..),
-    GShape (..),
-    GShapeNoVar (..),
+    BExp (..),
   )
 where
+
+import Language.GaiwanDefs
+
+type BExp = GExp ReservedBuffer -- Expression that can use GPUBufferGet (ReservedBuffer) BExp
 
 -- Names for buffers
 newtype GPUBufferName = GPUBufferName Int deriving (Show, Ord, Eq)
 
-type GShapeNoVar = GShape Void
-
 data Void -- Empty datatype
-
-instance Eq Void where
-  (==) _ _ = False
-
-instance Ord Void where
-  (<=) _ _ = False
-
-instance Show Void where
-  show _ = error "calling show on nonexisent value"
-
-data GShape a
-  = GaiwanInt -- TODO: float
-  | GaiwanTuple [GShape a]
-  | TVar a
-  deriving (Show, Eq, Ord, Read)
-
--- A GPU buffer has a
--- - type of its contents
--- - Size
--- TODO: remove int
--- Note that a GPUBuffer of a product type (Tuple Int Int) may be implemeted as two "real" gpu buffers
-data GPUBuffer = GPUBuffer GPUBufferName GShapeNoVar Int deriving (Show, Ord, Eq)
-
-gpuBufferSize (GPUBuffer _ _ s) = s
 
 newtype KernelName = KernelName String deriving (Show, Eq)
 
+data ReservedBuffer = ReservedBuffer GPUBufferName (GaiwanBuf Int)
+  deriving (Show, Eq)
+
+-- TODO derive this one
+instance Ord ReservedBuffer where
+  compare
+    (ReservedBuffer gbn (GaiwanBuf (GaiwanBufSize x y z) gs))
+    (ReservedBuffer gbn' (GaiwanBuf (GaiwanBufSize n i j) gs')) =
+      compare (gbn, x, y, z, gs) (gbn', n, i, j, gs')
+
 data GPUAction
-  = CallKernel KernelName [GPUBuffer] [GPUBuffer] Int -- name args threads
-  | ReadBuffer GPUBuffer
-  | AllocBuffer GPUBuffer
+  = CallKernel KernelName [ReservedBuffer] [ReservedBuffer] -- name args resultloc
+  | ReadBuffer String ReservedBuffer -- Write the contents of a named buffer into a GPU buffer
+  | AllocBuffer ReservedBuffer
+  | OutputBuffer [ReservedBuffer] -- Extract a list of buffers from the device to the host
   | Infoz String
   deriving (Show, Eq)

@@ -33,8 +33,8 @@ library
       Code.Definitions
       Code.Flatten
       Code.SCode
-      Code.Serialize
-      -- CodeGen.CLike
+      -- Code.Serialize
+      CodeGen.CLike
       -- CodeGen.OpenCL
       Language.GaiwanTypes
       CodeGen.Pipelining
@@ -112,7 +112,7 @@ test-suite gaiwan-test
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
-      Code.SerializeSpec
+      --Code.SerializeSpec
       CodeSpec
       LanguageSpec
       UnificationSpec

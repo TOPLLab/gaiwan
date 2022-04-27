@@ -1,3 +1,5 @@
+{-# LANGUAGE FlexibleInstances #-}
+
 module CodeSpec (spec) where
 
 import Data.Char
@@ -35,7 +37,7 @@ instance Arbitrary Exp where
   shrink (Minus a b) = [a, b]
   shrink Var {} = []
   shrink (Int 0) = []
-  shrink (Int x) = [Int (x -1)]
+  shrink (Int x) = [Int (x - 1)]
 
 convertT prog = timeout 100000 $ convert prog
 
@@ -43,4 +45,4 @@ spec :: Spec
 spec = do
   describe "Language.Gaiwan.subst" $ do
     it "Correctly replaces stuff" $ do
-      subst (Var "a" True) (Int 42) (Var "a" True) `shouldBe` Int 42
+      subst ("a", True) (Int 42) ((Var "a" True) :: Exp) `shouldBe` Int 42

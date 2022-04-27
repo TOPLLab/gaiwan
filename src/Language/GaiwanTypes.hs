@@ -11,7 +11,6 @@ module Language.GaiwanTypes
     TypedTransform (..),
     TypedAbstraction (..),
     TypedInstr (..),
-    VarFreeStmtType (..),
     GBufOrShape (..),
     GBufOrShapeDefault,
     StmtShape,
@@ -39,8 +38,6 @@ import Language.AlphaRename
 --import Debug.Trace
 import Language.GaiwanDefs
 
-data Void -- needed for var free types
-
 -- Type of a buffer
 
 type GaiwanBufDefault = GaiwanBuf ShapeVar
@@ -56,8 +53,6 @@ type TaggedBuff a = GaiwanBuf (Tag a)
 type EnvType = [(String, GBufOrShapeDefault)]
 
 type MaybeEnvType = [(String, Maybe GBufOrShapeDefault)]
-
-type VarFreeStmtType = GAbsType Void
 
 type AbstType = GAbsType ShapeVar
 
@@ -102,14 +97,14 @@ data TypedTransform
 data TypedInstr
   = TIApp TransformType TypedAbstraction [Exp]
   | TLoop TransformType Exp String [TypedInstr]
-  | TRetrun TransformType [String]
+  | TReturn TransformType [String]
   | TLetB TransformType String [TypedInstr] [TypedInstr]
   deriving (Show, Eq)
 
 typedInstr :: TypedInstr -> TransformType
 typedInstr (TIApp t _ _) = t
 typedInstr (TLoop t _ _ _) = t
-typedInstr (TRetrun t _) = t
+typedInstr (TReturn t _) = t
 typedInstr (TLetB t _ _ _) = t
 
 typedStmt :: TypedTransform -> TransformType
@@ -148,7 +143,7 @@ toTypedInstr :: [TypedAbstraction] -> EnvType -> Instr -> TypeingOut TypedInstr
 toTypedInstr definitions env (Return names) = do
   -- TODO what the same buffer is returned twice?
   outTypes <- mapM (const nextUniqvBuf) names
-  return $ TRetrun (GTransformType (M.fromList (zip names outTypes)) [] outTypes) names
+  return $ TReturn (GTransformType (M.fromList (zip names outTypes)) [] outTypes) names
 toTypedInstr definitions env (LetB name wl1 wl2) = do
   twl1b <- mapM (toTypedInstr definitions env) wl1
   twl1 <- mergeTList $ map typedInstr twl1b
@@ -579,7 +574,6 @@ typeOfBody env (If cond tBranch fBrach) = do
   case res of
     [tC, tT, fT] | tC == AShape GaiwanInt && tT == fT -> return tT
     _ -> fail "Types of if did not match"
-typeOfBody env a@App {} = fail $ "I don't know this applicaion" ++ show a
 typeOfBody env GPUBufferGet {} = fail "Cannot use GPUBufferget in body"
 
 typeOfVar :: EnvType -> Exp -> TypeingOut (GBufOrShape ShapeVar)
@@ -675,14 +669,14 @@ backPropagateT
 backPropagateT
   lt
   (GTransformType constr1 [] toT1)
-  ((TRetrun (GTransformType constr2 [] toT2) ss) : tis) =
+  ((TReturn (GTransformType constr2 [] toT2) ss) : tis) =
     do
       ltc <- createLTConstrainst lt constr1 constr2
       toT2N <- applyBPT ltc toT2
       let nextType = (GTransformType constr1 toT2N toT1)
       tisN <- backPropagateT ltc nextType tis
-      return $ ((TRetrun (GTransformType constr1 [] toT2N) ss) : tisN)
-backPropagateT lt _ ((TRetrun {}) : tis) =
+      return $ ((TReturn (GTransformType constr1 [] toT2N) ss) : tisN)
+backPropagateT lt _ ((TReturn {}) : tis) =
   fail "Invalid requirement or derived return type"
 backPropagateT
   lt

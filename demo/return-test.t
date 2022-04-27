@@ -26,7 +26,7 @@ abstraction bitonic_select(round:int , arrPerBlock:int) {
     }
 }
 abstraction randomizer() {
-    shaper randomizer(i) : int[n]{
+    shaper randomizer(i, d:int[n]) : int[n]{
         (i * 593) % 1000
     }
 }
