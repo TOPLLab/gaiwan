@@ -32,8 +32,11 @@ module Language.GaiwanDefs
 where
 
 import Control.Monad.State.Lazy
+import qualified Data.List as L
 import qualified Data.Map as M
 import Data.Maybe
+import qualified Data.Set as S
+import Debug.Trace
 
 data Instr
   = IApp String Bool [Exp]
@@ -60,7 +63,7 @@ data GExp a
   | If (GExp a) (GExp a) (GExp a)
   | IsEq (GExp a) (GExp a)
   | IsGreater (GExp a) (GExp a)
-  deriving (Show, Eq)
+  deriving (Show, Eq, Ord)
 
 data Void
 
@@ -129,10 +132,10 @@ data Stmt a
 
 type VarSpecifier = (String, Bool)
 
-simpleSubst :: Eq a => VarSpecifier -> GExp a -> GExp a -> GExp a
+simpleSubst :: (Eq a, Ord a, Show a) => VarSpecifier -> GExp a -> GExp a -> GExp a
 simpleSubst from to c = simplifyExp $ subst from to c
 
-simpleSubstMult :: Eq a => [(VarSpecifier, (GExp a))] -> (GExp a) -> (GExp a)
+simpleSubstMult :: (Eq a, Ord a, Show a) => [(VarSpecifier, (GExp a))] -> (GExp a) -> (GExp a)
 simpleSubstMult mapping to = simplifyExp $ substMult mapping to
 
 -- Substiute a for b in c
@@ -149,7 +152,7 @@ substMult kv c = mapExp (_substM kv) c
     _substM kvA (GPUBufferGet buf exp) = Just $ GPUBufferGet buf (substMult kv exp)
     _substM _ _ = Nothing
 
-substArrayGet :: (Eq a, Show a) => String -> (GExp a -> GExp a) -> GExp a -> GExp a
+substArrayGet :: (Eq a, Show a, Ord a) => String -> (GExp a -> GExp a) -> GExp a -> GExp a
 substArrayGet varname trans = simplifyExp . mapExp doSubstArrayGet
   where
     doSubstArrayGet (ArrayGet (Var name False) index) | name == varname = Just $ trans index
@@ -168,20 +171,87 @@ substGPUBuffers kv c = mapExp (_subst kv) c
       return $ GPUBufferGet otherBuf (substGPUBuffers kv exp)
     _subst kv c = Nothing
 
+data SimplifyData a
+  = SimplifyData
+      Int -- Let index
+      [GExp a] -- common expressions
+
 -- | Simplify till fixed point :TODO CONTINUE HERE
 -- The select-Tuple combo brings down the number of selects in bitonic sort from 4210 to 314
-simplifyExp :: Eq a => GExp a -> GExp a
-simplifyExp e =
-  let rec = mapExp _simplifyExp e
-   in if rec == e then e else simplifyExp rec
+simplifyExp :: (Eq a, Ord a, Show a) => GExp a -> (GExp a)
+simplifyExp e = fst $ runState (simplifyExpS e) (SimplifyData (findBestLiftedId e 1) [])
+
+-- find lowest id to start lets with
+findBestLiftedId :: GExp a -> Int -> Int
+findBestLiftedId e i =
+  let iname = "lifted" ++ (show i)
+   in if isVarUsed iname e then (findBestLiftedId e (i + 10)) else i
+
+isVarUsed iname e = not $ null $ findVarUsages iname e
+
+findVarUsages iname =
+  findMatches
+    ( \x -> case x of
+        (Let s _ _) -> s == iname
+        (Var s b) -> s == iname
+        _ -> False
+    )
+    (const True)
+
+findMatches :: (GExp a -> Bool) -> (String -> Bool) -> GExp a -> [GExp a]
+findMatches ePred letPred e = if ePred e then (e : (findMatchesRec e)) else (findMatchesRec e)
   where
+    findMatchesRec (Let s ge ge') | letPred s = (findMatches ePred letPred ge) ++ (findMatches ePred letPred ge')
+    findMatchesRec (Let s ge ge') = []
+    findMatchesRec (Plus ge ge') = (findMatches ePred letPred ge) ++ (findMatches ePred letPred ge')
+    findMatchesRec (Minus ge ge') = (findMatches ePred letPred ge) ++ (findMatches ePred letPred ge')
+    findMatchesRec (Modulo ge ge') = (findMatches ePred letPred ge) ++ (findMatches ePred letPred ge')
+    findMatchesRec (Times ge ge') = (findMatches ePred letPred ge) ++ (findMatches ePred letPred ge')
+    findMatchesRec (Pow ge ge') = (findMatches ePred letPred ge) ++ (findMatches ePred letPred ge')
+    findMatchesRec (Div ge ge') = (findMatches ePred letPred ge) ++ (findMatches ePred letPred ge')
+    findMatchesRec (Int n) = []
+    findMatchesRec (Tuple ges) = concatMap (findMatches ePred letPred) ges
+    findMatchesRec (Select ge n) = (findMatches ePred letPred ge)
+    findMatchesRec (Var s b) = []
+    findMatchesRec (Negate ge) = (findMatches ePred letPred ge)
+    findMatchesRec (ArrayGet ge ge') = (findMatches ePred letPred ge) ++ (findMatches ePred letPred ge')
+    findMatchesRec (GPUBufferGet a ge) = (findMatches ePred letPred ge)
+    findMatchesRec (If ge ge' ge2) = concatMap (findMatches ePred letPred) [ge, ge', ge2]
+    findMatchesRec (IsEq ge ge') = (findMatches ePred letPred ge) ++ (findMatches ePred letPred ge')
+    findMatchesRec (IsGreater ge ge') = (findMatches ePred letPred ge) ++ (findMatches ePred letPred ge')
+
+simplifyExpS :: (Eq a, Ord a, Show a) => GExp a -> State (SimplifyData a) (GExp a)
+simplifyExpS e = do
+  let result = mapExp _simplifyExp e
+  common <-
+    mapM
+      ( \x -> do
+          SimplifyData i e <- get
+          put $ SimplifyData (i + 1) e
+          return (x, "lifted" ++ (show i))
+      )
+      $ listCommonSubExpressions result
+  let recSubExpLifted = foldr (\(cExp, name) exp -> Let name cExp exp) (mapExp (substCommon (M.fromList $ common)) result) common
+  traceM $ show recSubExpLifted
+  if recSubExpLifted == e
+    then return e
+    else simplifyExpS recSubExpLifted
+  where
+    doRec esub = mapExp _simplifyExp esub
+
+    substCommon common e | M.member e common = Just $ Var (fromJust $ M.lookup e common) False
+--    substCommon common (Let varname _ _) = substCommon (M.filter (\x -> x != varname) common) TODODODODOOD
+    substCommon common e@(GPUBufferGet {}) = Just $ e
+    substCommon common _ = Nothing
+
     _simplifyExp e@(Select (Let s exp exp') i) = Just $ Let s exp (Select exp' i)
-    _simplifyExp e@(Select (Tuple exps) i) = Just $ exps !! i -- TODO doe we need to check the lenght here? It is already typechecked normally...
-    -- _simplifyExp e@(Select (If exp exp' exp2) i) = _
+    _simplifyExp e@(Select (Tuple exps) i) = Just $ exps !! i -- TODO do we need to check the lenght here? It is already typechecked normally...
+    _simplifyExp e@(Select (If exp exp' exp2) i) = Just $ If exp (Select exp' i) (Select exp2 i)
     _simplifyExp (Let varname a@(Int _) b) = Just $ subst (varname, False) a b
+    _simplifyExp (Let varname a@(Var {}) b) = Just $ subst (varname, False) a b
     _simplifyExp (Plus (Int a) (Int b)) = Just $ Int $ a + b
-    _simplifyExp (Plus (Int 0) b) = Just $ simplifyExp b
-    _simplifyExp (Plus a (Int 0)) = Just $ simplifyExp a
+    _simplifyExp (Plus (Int 0) b) = Just $ doRec b
+    _simplifyExp (Plus a (Int 0)) = Just $ doRec a
     _simplifyExp (Minus (Int a) (Int b)) = Just $ Int $ a - b
     _simplifyExp (Times (Int a) (Int b)) = Just $ Int $ a * b
     _simplifyExp (Times (Int 0) _) = Just $ Int 0
@@ -194,8 +264,72 @@ simplifyExp e =
     -- _simplifyExp (Modulo (Int 0) _) = Just $ Int 0 -- not always correct !!
     _simplifyExp (Modulo (Int a) (Int b)) = Just $ Int $ mod a b
     _simplifyExp (Pow (Int a) (Int b)) = Just $ Int $ a ^ b
-    _simplifyExp (GPUBufferGet b index) = Just $ GPUBufferGet b (simplifyExp index)
+    _simplifyExp (GPUBufferGet b index) = Just $ GPUBufferGet b (doRec index)
     _simplifyExp e = Nothing
+
+findCommonPlusOne e = do
+  x <- findCommon e
+  return $ x + 1
+
+findCommonPlusOneTwo e1 e2 = do
+  x <- findCommon e1
+  y <- findCommon e2
+  return $ x + y + 1
+
+findCommonPlusOneThree e1 e2 e3 = do
+  x <- findCommon e1
+  y <- findCommon e2
+  z <- findCommon e3
+  return $ x + y + z + 1
+
+insertIfGood :: Ord a => Int -> GExp a -> State (M.Map (GExp a) Int) ()
+insertIfGood c e | (c < 4) && (c > 1) = do
+  m <- get
+  let x = M.lookup e m
+  put $ case x of
+    Nothing -> M.insert e 1 m
+    (Just n) -> M.insert e (n + 1) m
+insertIfGood c e = return ()
+
+listCommonSubExpressions :: (Eq a, Ord a, Show a) => GExp a -> [GExp a]
+listCommonSubExpressions e =
+  let (_, m) = (runState (findCommon e) M.empty)
+   in map fst $
+        (\common -> trace ("common: " ++ show common) common) $
+          take 5 $
+            L.sortOn (\(_, count) -> -count) (L.filter (\(_, count) -> count > 3) $ M.toList m)
+
+findCommon :: (Eq a, Ord a, Show a) => GExp a -> State (M.Map (GExp a) Int) Int
+findCommon e = do
+  complexity <- findCommon_ e
+  insertIfGood complexity e
+  return complexity
+
+findCommon_ (Let varname ge ge') = do
+  m <- get
+  let (conflicted, safe) = L.partition (\(e,_)->isVarUsed varname e) $ M.toList m
+  put $ M.fromList safe
+  findCommonPlusOneTwo ge ge' -- don't care about compexity returned
+  new_m <- get
+  let (new_conflicted, new_safe) = L.partition (\(e,_)->isVarUsed varname e) $ M.toList new_m
+  put $ M.fromList (new_safe ++ safe)
+  return $ trace ("conflicts: " ++ show new_conflicted) 100
+findCommon_ (Plus ge ge') = findCommonPlusOneTwo ge ge'
+findCommon_ (Minus ge ge') = findCommonPlusOneTwo ge ge'
+findCommon_ (Modulo ge ge') = findCommonPlusOneTwo ge ge'
+findCommon_ (Times ge ge') = findCommonPlusOneTwo ge ge'
+findCommon_ (Pow ge ge') = findCommonPlusOneTwo ge ge'
+findCommon_ (Div ge ge') = findCommonPlusOneTwo ge ge'
+findCommon_ (Int n) = return 1
+findCommon_ (Tuple ges) = return 100
+findCommon_ (Select ge n) = return 100
+findCommon_ (Var s b) = return 1
+findCommon_ (Negate ge) = findCommon ge
+findCommon_ (ArrayGet ge ge') = findCommonPlusOne ge'
+findCommon_ (GPUBufferGet a ge) = findCommonPlusOne ge
+findCommon_ (If ge ge' ge2) = findCommonPlusOneThree ge ge' ge2
+findCommon_ (IsEq ge ge') = findCommonPlusOneTwo ge ge'
+findCommon_ (IsGreater ge ge') = findCommonPlusOneTwo ge ge'
 
 delKey :: (Eq k) => k -> [(k, b)] -> [(k, b)]
 delKey key = filter filterFun

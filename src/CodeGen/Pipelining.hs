@@ -134,7 +134,7 @@ theI = Var "i" True
 substByTheI :: String -> BExp -> BExp
 substByTheI x = simpleSubst (x, False) theI
 
-substTheIBy a b = subst ("i", True) a b
+substTheIBy a b = simplifyExp $ subst ("i", True) a b
 
 toBExp :: Exp -> BExp
 toBExp e = mapExp (const Nothing) e

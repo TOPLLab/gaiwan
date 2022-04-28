@@ -647,4 +647,7 @@ spec = do
                        OutputBuffer [ReservedBuffer (GPUBufferName 1) (GaiwanBuf (GaiwanBufSize 53 2 0) GaiwanInt)]
                      ]
 
--- todo: add test for all demos to see if they are `Right _`
+--       it "plans a sort-input-small.t program correcty" $ do
+--         bptp <- readProgTyped "demo/sort-input-small.t"
+--         (makePlan bptp)
+--           `shouldBe` []

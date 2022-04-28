@@ -22,7 +22,7 @@ import Data.List as L hiding (delete, insert, union)
 import Language.GaiwanDefs
 import Language.GaiwanTypes
 
-type SCode b a = State (Code b) a
+type SCode b = State (Code b)
 
 data Code a = Code
   { deviceCode :: a, -- Kernel definitions

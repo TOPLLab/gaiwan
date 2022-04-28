@@ -39,3 +39,8 @@ spec = do
         (\index -> simpleSubst ("i", True) index (Plus (Int 1) (Var "i" True)))
         problematicMin
         `shouldBe` Tuple [Plus (Int 1) (Var "pos" False), Plus (Int 1) (Plus (Var "pos" False) (Var "arrPerBlock" False))]
+
+    it "lifts commom expression" $ do
+      let r = (Times (Var "r" False) (Int 3)) :: GExp Void
+      simplifyExp (Plus (Plus (Plus (Plus (Plus r r) (Plus r r)) (Plus (Plus r r) (Plus r r))) (Plus (Plus (Plus r r) (Plus r r)) (Plus (Plus r r) (Plus r r)))) (Plus (Plus (Plus (Plus r r) (Plus r r)) (Plus (Plus r r) (Plus r r))) (Plus (Plus (Plus r r) (Plus r r)) (Plus (Plus r r) (Plus r r)))))
+        `shouldBe` Tuple [Plus (Int 1) (Var "pos" False), Plus (Int 1) (Plus (Var "pos" False) (Var "arrPerBlock" False))]
