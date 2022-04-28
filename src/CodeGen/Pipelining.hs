@@ -95,14 +95,14 @@ emptyPlan = PipelineStep []
 
 -- TODO check arg length at typechecking
 
+readToAccess :: ReservedBuffer -> (GaiwanBuf Int, BExp)
+readToAccess a@(ReservedBuffer gbn gb) = (gb, (GPUBufferGet a theI))
+
 processActions :: PlanData -> TypedInstr -> TmpCode PlanData
 processActions pd@(PipelineStep b) (TReturn (GTransformType contrainst fT tT) buffers) | length b == 0 = do
   let nameBuffer = zip buffers tT
   readBuffers <- mapM (uncurry addHostReadBuffer) nameBuffer
   return $ PipelineStep (map readToAccess readBuffers)
-  where
-    readToAccess :: ReservedBuffer -> (GaiwanBuf Int, BExp)
-    readToAccess a@(ReservedBuffer gbn gb) = (gb, (GPUBufferGet a theI))
 processActions pd (TIApp zz (TAbstraction t _ argnames body) argvalues) | length argnames == length argvalues =
   do
     let kv = zip argnames argvalues
@@ -143,7 +143,7 @@ traceThis x a = a
 
 -- TODO check for duplicates argument names in typing
 processApplication :: PlanData -> TypedTransform -> TmpCode PlanData
-processApplication (PipelineStep inputs) (TShaper (GTransformType contraints fromT [toT]) name (iname : bufferArgs) exp) | length inputs == length bufferArgs = do
+processApplication (PipelineStep inputs) (TShaper (GTransformType contraints fromT [toT]) name (iname : bufferArgs) exp) | length inputs == length bufferArgs && quiteSimple inputs = do
   --addHostCode $ Infoz $ "add call to shaper " ++ name ++ "(XXX)"
   return $ PipelineStep [(toT, foldr f (substByTheI iname (toBExp exp)) (zip bufferArgs inputs))]
   where
@@ -151,10 +151,20 @@ processApplication (PipelineStep inputs) (TShaper (GTransformType contraints fro
 
     g :: BExp -> BExp -> BExp
     g realArrayBufExp usedIndexInShpr = traceThis "OKKKKKKKKKKKKKKKKKKKK" $ substTheIBy (traceThis "AAAAAAAAA" usedIndexInShpr) (traceThis "BBBBBBBB" realArrayBufExp)
+processApplication complex@(PipelineStep inputs) task@(TShaper (GTransformType contraints fromT [toT]) name (iname : bufferArgs) exp) | length inputs == length bufferArgs = do
+  resBuffers <- toKernel complex
+  processApplication (PipelineStep (map readToAccess resBuffers)) task
 processApplication (PipelineStep [(_, input)]) (TMapper (GTransformType contraints [fromT] [toT]) name [iname, dname] exp) = do
   -- addHostCode $ Infoz $ "add call to  " ++ name ++ "()"
   return $ PipelineStep [(toT, simpleSubstMult [((iname, False), theI), ((dname, False), input)] (toBExp exp))]
 processApplication _ a = error $ show a
+
+quiteSimple :: [(GaiwanBuf Int, BExp)] -> Bool
+quiteSimple s | (all (\(GaiwanBuf _ t, _) -> case t of
+  GaiwanInt -> False
+  (GaiwanTuple gss) -> True
+  (TVar any) -> error "Cannot handle this yet...") s) = True
+quiteSimple input = (sum $ (map (complexity . snd) input)) < 30
 
 --processApplication pd (TAbstraction t _ [] body) =
 --  foldM processApplicationD pd body

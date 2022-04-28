@@ -17,6 +17,7 @@ module Language.GaiwanDefs
     GBufOrShape (..),
     Program (..),
     subst,
+    complexity,
     substMult,
     substGPUBuffers,
     simplifyExp,
@@ -64,6 +65,25 @@ data GExp a
   | IsEq (GExp a) (GExp a)
   | IsGreater (GExp a) (GExp a)
   deriving (Show, Eq, Ord)
+
+complexity :: GExp a -> Int
+complexity (Let s ge ge') = (complexity ge) + (complexity ge')
+complexity (Plus ge ge') = (complexity ge) + (complexity ge')
+complexity (Minus ge ge') = (complexity ge) + (complexity ge')
+complexity (Modulo ge ge') = (complexity ge) + (complexity ge')
+complexity (Times ge ge') = (complexity ge) + (complexity ge')
+complexity (Pow ge ge') = (complexity ge) + (complexity ge')
+complexity (Div ge ge') = (complexity ge) + (complexity ge')
+complexity (IsGreater ge ge') = (complexity ge) + (complexity ge')
+complexity (IsEq ge ge') = (complexity ge) + (complexity ge')
+complexity (ArrayGet ge ge') = (complexity ge) + (complexity ge')
+complexity (Int n) = 1
+complexity (Tuple ges) = sum (map complexity ges)
+complexity (Select ge n) = 1 + (complexity ge)
+complexity (Var s b) = 1
+complexity (Negate ge) = complexity ge
+complexity (GPUBufferGet a ge) = 1 + complexity ge
+complexity (If ge ge' ge'') = (complexity ge) + (complexity ge') + (complexity ge'')
 
 data Void
 
@@ -269,8 +289,6 @@ findCommonPlusOneThree constr e1 e2 e3 = do
   (z, ez) <- findCommon e3
   return $ (x + y + z + 1, constr ex ey ez)
 
-
-
 getLiftMap :: Ord a => State (SimplifyData a) (M.Map (GExp a) Int)
 getLiftMap = do
   SimplifyData _ m <- get
@@ -281,8 +299,6 @@ putLiftMap m = do
   SimplifyData i _ <- get
   put $ SimplifyData i m
 
-
-
 insertIfGood :: Ord a => Int -> GExp a -> State (SimplifyData a) ()
 insertIfGood c e | (c < 4) && (c > 1) = do
   m <- getLiftMap
@@ -292,14 +308,12 @@ insertIfGood c e | (c < 4) && (c > 1) = do
     (Just n) -> M.insert e (n + 1) m
 insertIfGood c e = return ()
 
-
 substCommon :: (Eq a, Ord a, Show a) => GExp a -> State (SimplifyData a) (GExp a)
 substCommon e = do
-    putLiftMap M.empty
-    (_,eNew) <- findCommon (trace ("INPUTSUBST" ++ show e) e)
-    m <- getLiftMap
-    doGoodLifts (M.toList m) eNew
-
+  putLiftMap M.empty
+  (_, eNew) <- findCommon e
+  m <- getLiftMap
+  doGoodLifts (M.toList m) eNew
 
 findCommon :: (Eq a, Ord a, Show a) => GExp a -> State (SimplifyData a) (Int, GExp a)
 findCommon e = do
@@ -307,20 +321,20 @@ findCommon e = do
   insertIfGood complexity e
   return (complexity, er)
 
-doGoodLifts :: (Ord a, Show a) => [(GExp a, Int)] -> GExp a -> State  (SimplifyData a) (GExp a)
+doGoodLifts :: (Ord a, Show a) => [(GExp a, Int)] -> GExp a -> State (SimplifyData a) (GExp a)
 doGoodLifts lifts e = do
-    let goodlifts = map fst $ take 5 $ L.sortOn (\(_, count) -> -count) (L.filter (\(_, count) -> count > 2) $ lifts)
-    common <-
-        mapM
-          ( \x -> do
-              SimplifyData i e <- get
-              put $ SimplifyData (i + 1) e
-              return (x, "lifted" ++ (show i))
-          )
-          $ goodlifts
---TODO limit mapExp
-    let newVal  = foldr (\(cExp, name) exp -> Let name cExp exp) (mapExp (substCommon (M.fromList $ common)) e) common
-    return $ (if (not $ null common) then trace ("Did subst " ++ show (lifts, common, e, newVal)) else id) $  newVal
+  let goodlifts = map fst $ take 5 $ L.sortOn (\(_, count) -> -count) (L.filter (\(_, count) -> count > 2) $ lifts)
+  common <-
+    mapM
+      ( \x -> do
+          SimplifyData i e <- get
+          put $ SimplifyData (i + 1) e
+          return (x, "lifted" ++ (show i))
+      )
+      $ goodlifts
+  --TODO limit mapExp
+  let newVal = foldr (\(cExp, name) exp -> Let name cExp exp) (mapExp (substCommon (M.fromList $ common)) e) common
+  return newVal
   where
     substCommon common e | M.member e common = Just $ Var (fromJust $ M.lookup e common) False
     substCommon common (GPUBufferGet b e) = Just $ GPUBufferGet b (mapExp (substCommon common) e)
