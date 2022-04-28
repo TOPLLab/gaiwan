@@ -43,4 +43,4 @@ spec = do
     it "lifts commom expression" $ do
       let r = (Times (Var "r" False) (Int 3)) :: GExp Void
       simplifyExp (Plus (Plus (Plus (Plus (Plus r r) (Plus r r)) (Plus (Plus r r) (Plus r r))) (Plus (Plus (Plus r r) (Plus r r)) (Plus (Plus r r) (Plus r r)))) (Plus (Plus (Plus (Plus r r) (Plus r r)) (Plus (Plus r r) (Plus r r))) (Plus (Plus (Plus r r) (Plus r r)) (Plus (Plus r r) (Plus r r)))))
-        `shouldBe` Tuple [Plus (Int 1) (Var "pos" False), Plus (Int 1) (Plus (Var "pos" False) (Var "arrPerBlock" False))]
+        `shouldBe` Let "lifted1" (Times (Var "r" False) (Int 3)) (Let "lifted2" (Plus (Var "lifted1" False) (Var "lifted1" False)) (Let "lifted3" (Plus (Var "lifted2" False) (Var "lifted2" False)) (Let "lifted4" (Plus (Var "lifted3" False) (Var "lifted3" False)) (Plus (Plus (Var "lifted4" False) (Var "lifted4" False)) (Plus (Var "lifted4" False) (Var "lifted4" False))))))
