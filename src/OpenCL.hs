@@ -11,11 +11,11 @@ where
 import qualified Control.Exception as Ex (catch)
 import Control.Monad
 import Control.Parallel.OpenCL
+import Data.List
 import Data.Maybe (fromMaybe)
 import Foreign
 import Foreign.C
 import System.Exit
-import Data.List
 
 -- | An openCL buffer with a certrain Id and a size
 data CLGPUBuffer = CLGPUBuffer Int Int deriving (Show, Eq)
@@ -51,7 +51,7 @@ rangeArr (Range a b 0) = [a, b]
 rangeArr (Range a b c) = [a, b, c]
 
 mkOpenRunner :: (Int -> Ptr CInt -> IO a) -> String -> [(String, Int)] -> IO (OpenCLRunner a)
-mkOpenRunner convertor programSource extraDefines= do
+mkOpenRunner convertor programSource extraDefines = do
   -- Initialize OpenCL
   (platform : _) <- clGetPlatformIDs
   (dev : _) <- clGetDeviceIDs platform CL_DEVICE_TYPE_ALL
@@ -61,7 +61,7 @@ mkOpenRunner convertor programSource extraDefines= do
   -- Initialize Kernel
   program <- clCreateProgramWithSource context programSource
   Ex.catch
-    (clBuildProgram program [dev] (intercalate " " $ map (\(name,v)->"-D "++show name++"="++show v) extraDefines))
+    (clBuildProgram program [dev] (intercalate " " $ map (\(name, v) -> "-D " ++ show name ++ "=" ++ show v) extraDefines))
     ( \CL_BUILD_PROGRAM_FAILURE -> do
         log <- clGetProgramBuildLog program dev
         putStrLn "Compilation failed!"

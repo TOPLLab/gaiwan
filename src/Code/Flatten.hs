@@ -19,11 +19,11 @@ module Code.Flatten
   )
 where
 
-import Debug.Trace
 import Code.Definitions
 import Data.List as L hiding (delete, insert, union)
 import Data.Maybe
 import Data.Set as S (Set (..), delete, difference, empty, filter, foldr, fromList, insert, lookupMin, member, toList, union)
+import Debug.Trace
 
 flattenBuffers :: [GPUAction] -> [GPUAction]
 flattenBuffers actions = assignBuffers actionsAndNeed
