@@ -2,7 +2,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TupleSections #-}
 
-module CodeGen.Pipelining (collectBuffers, convertPls, makePlan) where
+module CodeGen.Pipelining (prepare, makePlan) where
 
 -- The idea is to transform a list of shuffles and maps into a list of maps (containing array)
 
@@ -23,17 +23,14 @@ import Language.GaiwanTypes
 data PipelineStep = PipelineStep [(GaiwanBuf Int, BExp)]
   deriving (Show)
 
--- | Get a list of used GPUBuffers
-collectBuffers :: [PipelineStep] -> [ReservedBuffer]
-collectBuffers p = undefined
-
-convertPls = undefined
-
 type TmpCode a = SCode String a
+
+prepare :: TypedProgram -> (String, [GPUAction])
+prepare p = compile $ execCode $ makePlanning p
 
 -- helper function for only testing the plan
 makePlan :: TypedProgram -> [GPUAction]
-makePlan p = (\x -> (Infoz (fst x) : (snd x))) $ compile $ execCode $ makePlanning p
+makePlan p = (\x -> (Infoz (fst x) : (snd x))) $ prepare p
 
 makePlanning :: TypedProgram -> TmpCode ()
 makePlanning (TypedProg (GTransformType contraints fromT toT) actions) =
