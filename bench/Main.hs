@@ -30,4 +30,4 @@ main = do
 -- | An openCL Runner that only reads the first 10 elements of each buffer
 runOnlyFirst = runOpenCLCompiledWithConv conv
   where
-    conv size ptr = map toInteger <$> mapM (peekElemOff ptr) [0 .. min size 10 -1]
+    conv size ptr = map toInteger <$> mapM (peekElemOff ptr) [0 .. min size 10 - 1]
