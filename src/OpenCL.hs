@@ -15,9 +15,10 @@ import Data.Maybe (fromMaybe)
 import Foreign
 import Foreign.C
 import System.Exit
+import Data.List
 
 -- | An openCL buffer with a certrain Id and a size
-data CLGPUBuffer = CLGPUBuffer Int Int deriving (Show, Eq, Ord)
+data CLGPUBuffer = CLGPUBuffer Int Int deriving (Show, Eq)
 
 -- | A range
 data Range = Range Int Int Int deriving (Show)
@@ -27,7 +28,8 @@ data OpenCLAction
   = MakeKernel String [CLGPUBuffer] Range
   | AllocBuffer CLGPUBuffer
   | FreeBuffer CLGPUBuffer
-  | ReadBuffer CLGPUBuffer
+  | ReadBuffer (Ptr CInt) CLGPUBuffer
+  | ExtractBuffer CLGPUBuffer
   deriving (Show)
 
 -- | Information to keep between GPU invocations
@@ -48,8 +50,8 @@ rangeArr (Range a 0 0) = [a]
 rangeArr (Range a b 0) = [a, b]
 rangeArr (Range a b c) = [a, b, c]
 
-mkOpenRunner :: (Int -> Ptr CInt -> IO a) -> String -> IO (OpenCLRunner a)
-mkOpenRunner convertor programSource = do
+mkOpenRunner :: (Int -> Ptr CInt -> IO a) -> String -> [(String, Int)] -> IO (OpenCLRunner a)
+mkOpenRunner convertor programSource extraDefines= do
   -- Initialize OpenCL
   (platform : _) <- clGetPlatformIDs
   (dev : _) <- clGetDeviceIDs platform CL_DEVICE_TYPE_ALL
@@ -59,7 +61,7 @@ mkOpenRunner convertor programSource = do
   -- Initialize Kernel
   program <- clCreateProgramWithSource context programSource
   Ex.catch
-    (clBuildProgram program [dev] "")
+    (clBuildProgram program [dev] (intercalate " " $ map (\(name,v)->"-D "++show name++"="++show v) extraDefines))
     ( \CL_BUILD_PROGRAM_FAILURE -> do
         log <- clGetProgramBuildLog program dev
         putStrLn "Compilation failed!"
@@ -115,7 +117,7 @@ runAction d (FreeBuffer gpub) = do
   clReleaseMemObject cbuf
   returnAction (d {gpuBuffers = filter (\(b, _) -> b /= gpub) (gpuBuffers d)}) Nothing
 -- renew definition to read buffer
-runAction d (ReadBuffer gpub@(CLGPUBuffer _ size)) = do
+runAction d (ExtractBuffer gpub@(CLGPUBuffer _ size)) = do
   let elemSize = sizeOf (0 :: CInt)
       vecSize = elemSize * size
   input <- mallocArray size :: IO (Ptr CInt)
@@ -124,6 +126,13 @@ runAction d (ReadBuffer gpub@(CLGPUBuffer _ size)) = do
   -- send the read contents to the convertor in d
   r <- convertor d size input
   returnAction (d {waitlist = [evt]}) $ Just r
+runAction d (ReadBuffer bufdata gpub@(CLGPUBuffer _ size)) = do
+  let elemSize = sizeOf (0 :: CInt)
+      vecSize = elemSize * size
+  let cbuf = getGpuBuffer d gpub
+  mem_in <- clCreateBuffer (context d) [CL_MEM_READ_ONLY, CL_MEM_COPY_HOST_PTR] (vecSize, castPtr bufdata)
+  -- send the read contents to the convertor in d
+  returnAction (d {gpuBuffers = (gpub, mem_in) : gpuBuffers d}) Nothing
 
 -- | Update the runner and return value
 returnAction :: RunCLData a -> Maybe a -> IO (OpenCLRunner a)
