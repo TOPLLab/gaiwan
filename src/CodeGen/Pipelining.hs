@@ -160,11 +160,17 @@ processApplication (PipelineStep [(_, input)]) (TMapper (GTransformType contrain
 processApplication _ a = error $ show a
 
 quiteSimple :: [(GaiwanBuf Int, BExp)] -> Bool
-quiteSimple s | (all (\(GaiwanBuf _ t, _) -> case t of
-  GaiwanInt -> False
-  (GaiwanTuple gss) -> True
-  (TVar any) -> error "Cannot handle this yet...") s) = True
-quiteSimple input = (sum $ (map (complexity . snd) input)) < 30
+quiteSimple s
+  | ( all
+        ( \(GaiwanBuf _ t, _) -> case t of
+            GaiwanInt -> False
+            (GaiwanTuple gss) -> True
+            (TVar any) -> error "Cannot handle this yet..."
+        )
+        s
+    ) =
+    True
+quiteSimple input = (sum $ (map (complexity . snd) input)) < 40
 
 --processApplication pd (TAbstraction t _ [] body) =
 --  foldM processApplicationD pd body

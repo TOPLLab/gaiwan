@@ -4,8 +4,8 @@ import Code.Definitions
 import Code.SCode
 import Control.Monad.State (StateT, get, put, runStateT)
 import Data.List
-import Language.GaiwanDefs
 import Debug.Trace
+import Language.GaiwanDefs
 
 mkBinOp :: BExp -> BExp -> String -> CSCode String
 mkBinOp a b op = do
@@ -14,21 +14,21 @@ mkBinOp a b op = do
   return $ ka ++ op ++ kb
 
 mkCode :: BExp -> SCode String (String, String)
-mkCode e | trace ("\nKKKKKKKKKKKKKKKKK: " ++ (take 10000 $ show e)) False = undefined
+--mkCode e | trace ("\nKKKKKKKKKKKKKKKKK: " ++ (take 10000 $ show e)) False = undefined
 mkCode e = do
-    (code, CAdmin _ _ bounds) <- runStateT (mkCCode e) (CAdmin 0 [] [])
-    let letBindCode = map f bounds
-    return ((intercalate "\n" letBindCode), code)
+  (code, CAdmin _ _ bounds) <- runStateT (mkCCode e) (CAdmin 0 [] [])
+  let letBindCode = map f bounds
+  return ((intercalate "\n" letBindCode), code)
 
 f :: (Int, String) -> String
-f (id, impl) = "int let_"++(show id) ++ "= "++impl++";"
+f (id, impl) = "int let_" ++ (show id) ++ "= " ++ impl ++ ";"
 
 data CAdmin = CAdmin Int [(String, Int)] [(Int, String)]
 
 type CSCode = StateT CAdmin (SCode String)
 
 mkCCode :: BExp -> CSCode String
-mkCCode e | trace ("mkCCode: " ++ (take 100 $ show e)) False = undefined
+--mkCCode e | trace ("mkCCode: " ++ (take 100 $ show e)) False = undefined
 mkCCode (Let name value exp) = do
   valueStr <- mkCCode value
   CAdmin letCnt mapping doneMapping <- get
@@ -65,7 +65,7 @@ mkCCode (ArrayGet x idx) = do
 mkCCode (GPUBufferGet buffer idx) = mkCCode (ArrayGet (gpuBufferVar buffer) idx)
 mkCCode unknownCode = error $ "Could not convert code:" ++ (take 30 $ show unknownCode) ++ "..."
 
-kernelTemplate :: KernelName -> [ReservedBuffer] -> [ReservedBuffer] -> [(String,String)] -> String
+kernelTemplate :: KernelName -> [ReservedBuffer] -> [ReservedBuffer] -> [(String, String)] -> String
 kernelTemplate name buffers buffersout code =
   mkKernelShell name (buffers ++ buffersout) $
     " int int_index = get_global_id(0);\n"
@@ -85,8 +85,8 @@ gpuBufferVar (ReservedBuffer (GPUBufferName name) _) = Var ("array" ++ show name
 -- todo
 gpuBufferArgName b@(ReservedBuffer (GPUBufferName name) _) = "int_array" ++ (show name)
 
-gpuBufferAssign :: String -> ReservedBuffer -> (String,String) -> String
-gpuBufferAssign index buffer (letBinds,value) = "{"++letBinds++"\n"++gpuBufferArgName buffer ++ "[" ++ index ++ "] = " ++ value ++ ";}"
+gpuBufferAssign :: String -> ReservedBuffer -> (String, String) -> String
+gpuBufferAssign index buffer (letBinds, value) = "{" ++ letBinds ++ "\n" ++ gpuBufferArgName buffer ++ "[" ++ index ++ "] = " ++ value ++ ";}"
 
 -- Add brackets
 mkCodeB :: BExp -> CSCode String

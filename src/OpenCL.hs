@@ -114,6 +114,7 @@ runAction d (FreeBuffer gpub) = do
   let cbuf = getGpuBuffer d gpub
   clReleaseMemObject cbuf
   returnAction (d {gpuBuffers = filter (\(b, _) -> b /= gpub) (gpuBuffers d)}) Nothing
+-- renew definition to read buffer
 runAction d (ReadBuffer gpub@(CLGPUBuffer _ size)) = do
   let elemSize = sizeOf (0 :: CInt)
       vecSize = elemSize * size
