@@ -3,6 +3,7 @@
 module LanguageSpec (spec) where
 
 import Code.Definitions
+import Code.Flatten (flattenBuffers)
 import CodeGen.Pipelining
 import Control.Monad.State.Lazy
 import Data.Either
@@ -647,7 +648,48 @@ spec = do
                        OutputBuffer [ReservedBuffer (GPUBufferName 1) (GaiwanBuf (GaiwanBufSize 53 2 0) GaiwanInt)]
                      ]
 
---       it "plans a sort-input-small.t program correcty" $ do
---         bptp <- readProgTyped "demo/sort-input-small.t"
---         (makePlan bptp)
---           `shouldBe` []
+      it "flattens bufferes" $ do
+        flattenBuffers
+          [ ReadBuffer "a" (ReservedBuffer (GPUBufferName 0) (GaiwanBuf (GaiwanBufSize 53 1 0) GaiwanInt)),
+            CallKernel
+              (KernelName "kernel0")
+              [ReservedBuffer (GPUBufferName 0) (GaiwanBuf (GaiwanBufSize 53 1 0) GaiwanInt)]
+              [ReservedBuffer (GPUBufferName 1) (GaiwanBuf (GaiwanBufSize 53 1 0) GaiwanInt)],
+            CallKernel
+              (KernelName "kernel0")
+              [ReservedBuffer (GPUBufferName 1) (GaiwanBuf (GaiwanBufSize 53 1 0) GaiwanInt)]
+              [ReservedBuffer (GPUBufferName 2) (GaiwanBuf (GaiwanBufSize 53 1 0) GaiwanInt)],
+            CallKernel
+              (KernelName "kernel0")
+              [ReservedBuffer (GPUBufferName 2) (GaiwanBuf (GaiwanBufSize 53 1 0) GaiwanInt)]
+              [ReservedBuffer (GPUBufferName 3) (GaiwanBuf (GaiwanBufSize 53 1 0) GaiwanInt)],
+            CallKernel
+              (KernelName "kernel0")
+              [ReservedBuffer (GPUBufferName 4) (GaiwanBuf (GaiwanBufSize 53 1 0) GaiwanInt)]
+              [ReservedBuffer (GPUBufferName 5) (GaiwanBuf (GaiwanBufSize 53 1 0) GaiwanInt)],
+            OutputBuffer [ReservedBuffer (GPUBufferName 5) (GaiwanBuf (GaiwanBufSize 53 1 0) GaiwanInt)]
+          ]
+          `shouldBe` [ ReadBuffer "a" (ReservedBuffer (GPUBufferName 0) (GaiwanBuf (GaiwanBufSize 53 1 0) GaiwanInt)),
+                       CallKernel
+                         (KernelName "kernel0")
+                         [ReservedBuffer (GPUBufferName 0) (GaiwanBuf (GaiwanBufSize 53 1 0) GaiwanInt)]
+                         [ReservedBuffer (GPUBufferName 1) (GaiwanBuf (GaiwanBufSize 53 1 0) GaiwanInt)],
+                       CallKernel
+                         (KernelName "kernel0")
+                         [ReservedBuffer (GPUBufferName 1) (GaiwanBuf (GaiwanBufSize 53 1 0) GaiwanInt)]
+                         [ReservedBuffer (GPUBufferName 2) (GaiwanBuf (GaiwanBufSize 53 1 0) GaiwanInt)],
+                       CallKernel
+                         (KernelName "kernel0")
+                         [ReservedBuffer (GPUBufferName 2) (GaiwanBuf (GaiwanBufSize 53 1 0) GaiwanInt)]
+                         [ReservedBuffer (GPUBufferName 0) (GaiwanBuf (GaiwanBufSize 53 1 0) GaiwanInt)],
+                       CallKernel
+                         (KernelName "kernel0")
+                         [ReservedBuffer (GPUBufferName 4) (GaiwanBuf (GaiwanBufSize 53 1 0) GaiwanInt)]
+                         [ReservedBuffer (GPUBufferName 1) (GaiwanBuf (GaiwanBufSize 53 1 0) GaiwanInt)],
+                       OutputBuffer [ReservedBuffer (GPUBufferName 1) (GaiwanBuf (GaiwanBufSize 53 1 0) GaiwanInt)]
+                     ]
+
+--      it "plans a sort-input-small.t program correcty" $ do
+--        bptp <- readProgTyped "demo/sort-input-small.t"
+--        (tail $ makePlan bptp)
+--          `shouldBe` []
