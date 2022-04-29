@@ -665,9 +665,9 @@ spec = do
               [ReservedBuffer (GPUBufferName 3) (GaiwanBuf (GaiwanBufSize 53 1 0) GaiwanInt)],
             CallKernel
               (KernelName "kernel0")
-              [ReservedBuffer (GPUBufferName 4) (GaiwanBuf (GaiwanBufSize 53 1 0) GaiwanInt)]
-              [ReservedBuffer (GPUBufferName 5) (GaiwanBuf (GaiwanBufSize 53 1 0) GaiwanInt)],
-            OutputBuffer [ReservedBuffer (GPUBufferName 5) (GaiwanBuf (GaiwanBufSize 53 1 0) GaiwanInt)]
+              [ReservedBuffer (GPUBufferName 3) (GaiwanBuf (GaiwanBufSize 53 1 0) GaiwanInt)]
+              [ReservedBuffer (GPUBufferName 4) (GaiwanBuf (GaiwanBufSize 53 1 0) GaiwanInt)],
+            OutputBuffer [ReservedBuffer (GPUBufferName 4) (GaiwanBuf (GaiwanBufSize 53 1 0) GaiwanInt)]
           ]
           `shouldBe` [ ReadBuffer "a" (ReservedBuffer (GPUBufferName 0) (GaiwanBuf (GaiwanBufSize 53 1 0) GaiwanInt)),
                        CallKernel
@@ -681,12 +681,13 @@ spec = do
                        CallKernel
                          (KernelName "kernel0")
                          [ReservedBuffer (GPUBufferName 2) (GaiwanBuf (GaiwanBufSize 53 1 0) GaiwanInt)]
-                         [ReservedBuffer (GPUBufferName 0) (GaiwanBuf (GaiwanBufSize 53 1 0) GaiwanInt)],
+                         [ReservedBuffer (GPUBufferName 1) (GaiwanBuf (GaiwanBufSize 53 1 0) GaiwanInt)],
                        CallKernel
                          (KernelName "kernel0")
-                         [ReservedBuffer (GPUBufferName 4) (GaiwanBuf (GaiwanBufSize 53 1 0) GaiwanInt)]
-                         [ReservedBuffer (GPUBufferName 1) (GaiwanBuf (GaiwanBufSize 53 1 0) GaiwanInt)],
-                       OutputBuffer [ReservedBuffer (GPUBufferName 1) (GaiwanBuf (GaiwanBufSize 53 1 0) GaiwanInt)]
+                         [ReservedBuffer (GPUBufferName 1) (GaiwanBuf (GaiwanBufSize 53 1 0) GaiwanInt)]
+                         [ReservedBuffer (GPUBufferName 2) (GaiwanBuf (GaiwanBufSize 53 1 0) GaiwanInt)],
+                       OutputBuffer
+                         [ReservedBuffer (GPUBufferName 2) (GaiwanBuf (GaiwanBufSize 53 1 0) GaiwanInt)]
                      ]
 
 --      it "plans a sort-input-small.t program correcty" $ do

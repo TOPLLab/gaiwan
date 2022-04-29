@@ -9,11 +9,17 @@
 -- This could be improved further by using graph colouring techniques, but to keep
 -- things simple, we use this simple method.
 --
+--
+--
+-- TODO: document that all ReadBuffer's of the same buffer will be read only,
+-- And therefore best all use the same GaiwanBuf if they correspond to the same read buf
+--
 module Code.Flatten
   ( flattenBuffers,
   )
 where
 
+import Debug.Trace
 import Code.Definitions
 import Data.List as L hiding (delete, insert, union)
 import Data.Maybe
@@ -24,7 +30,10 @@ flattenBuffers actions = assignBuffers actionsAndNeed
   where
     -- Transform list of `action` to list of (`action`, buffers needed)
     -- Where buffers needed is a set of buffers that might be read in the future
-    actionsAndNeed = fst $ L.foldr foldrWithNeed ([], S.empty) actions
+    actionsAndNeed = fst $ L.foldr foldrWithNeed ([], readBuffers actions) actions
+
+    readBuffers :: [GPUAction] -> Set ReservedBuffer
+    readBuffers e = L.foldr (\x m -> case x of (ReadBuffer _ rb) -> S.insert rb m; _ -> m) S.empty e
 
     foldrWithNeed ::
       GPUAction -> -- current Action
@@ -32,16 +41,13 @@ flattenBuffers actions = assignBuffers actionsAndNeed
         Set ReservedBuffer -- Buffers whose value are needed by future actions (for reading)
       ) ->
       ([(GPUAction, Set ReservedBuffer)], Set ReservedBuffer)
-    foldrWithNeed action@(ReadBuffer todoUseName buf) (acc, need) =
-      let neededBufs = difference neededBufs (fromList [buf])
-       in ((action, fromList [buf]) : acc, neededBufs)
     foldrWithNeed action@(OutputBuffer buffers) (acc, need) =
       let neededBufs = union need (fromList buffers)
-       in ((action, fromList buffers) : acc, neededBufs)
+       in ((action, neededBufs) : acc, neededBufs)
     foldrWithNeed action@(CallKernel name usedBuffers writtenBuffers) (acc, need) =
       let neededBufs = union need $ fromList usedBuffers
-       in ((action, fromList (usedBuffers ++ writtenBuffers)) : acc, difference neededBufs (fromList writtenBuffers))
-    foldrWithNeed action (acc, need) = ((action, need) : acc, need) -- todo remove
+       in ((action, need) : acc, difference neededBufs (fromList writtenBuffers))
+    foldrWithNeed action (acc, need) = ((action, need) : acc, need)
     assignBuffers :: [(GPUAction, Set ReservedBuffer)] -> [GPUAction]
     assignBuffers x = reverse $ fst $ L.foldl' assignBufFold ([], (S.empty, [])) x
 
@@ -67,8 +73,7 @@ flattenBuffers actions = assignBuffers actionsAndNeed
     -- Apply a mappign of GPUBuffers to a GPU action
     -- Assumes that all mentioned GPU buffers are assigned in the mapping
     translate :: [(ReservedBuffer, ReservedBuffer)] -> GPUAction -> GPUAction
-    translate m (ReadBuffer name buf) =
-      ReadBuffer name $ justLookup m buf
+    translate m r@(ReadBuffer {}) = r
     translate m (CallKernel name usedBuffers writtenBuffer) =
       CallKernel
         name
