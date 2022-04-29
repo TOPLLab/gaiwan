@@ -57,11 +57,12 @@ flattenBuffers actions = assignBuffers actionsAndNeed
       let a = map (\x -> (x, lookup x mapping)) $ toList needed
        in let (free1, mapping1) = L.foldr assign (free, mapping) a
            in let (stillNeeded, notNeeded) = partition (\(x, _) -> member x needed) mapping1
-               in ( translate mapping1 action : acc,
-                    ( union free1 $ fromList $ map snd notNeeded,
-                      stillNeeded
-                    )
-                  )
+               in let reworkedAction = translate mapping1 action
+                   in ( reworkedAction : acc,
+                        ( union free1 $ fromList $ map snd notNeeded,
+                          stillNeeded
+                        )
+                      )
 
     -- Apply a mappign of GPUBuffers to a GPU action
     -- Assumes that all mentioned GPU buffers are assigned in the mapping
@@ -88,8 +89,8 @@ flattenBuffers actions = assignBuffers actionsAndNeed
         [(ReservedBuffer, ReservedBuffer)] -- new mapping
       )
     assign (_, Just _) (free, table) = (free, table) -- do nothing if found
-    assign (ins@(ReservedBuffer shape size), Nothing) (free, table) =
-      case lookupMin $ S.filter (\b -> b == ins) free of
+    assign (ins@(ReservedBuffer name shapeSpecifier), Nothing) (free, table) =
+      case lookupMin $ S.filter (\(ReservedBuffer _ b) -> b == shapeSpecifier) free of
         Just b -> (delete b free, (ins, b) : table) -- use if free availible
         Nothing -> (free, (ins, ins) : table) -- new if not
 
