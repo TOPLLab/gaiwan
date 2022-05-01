@@ -17,10 +17,10 @@ abstraction bitonic_select(round:int , arrPerBlock:int) {
         let arrowBlock = i/(2*arrPerBlock) in
             let arrowBlockStart = arrowBlock * arrPerBlock in
             let arrowOffset = i % arrPerBlock in
-            if(arrowBlockStart*2+arrPerBlock < i){
-                d[arrowBlock * arrPerBlock + arrowOffset][[0]]
+            if(arrowBlockStart*2+arrPerBlock < i+1){
+                d[arrowBlockStart + arrowOffset][[0]]
             }else{
-                d[arrowBlock * arrPerBlock + arrowOffset][[1]]
+                d[arrowBlockStart + arrowOffset][[1]]
             }
     }
 }
