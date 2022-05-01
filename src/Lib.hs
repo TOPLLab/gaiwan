@@ -1,5 +1,5 @@
 module Lib
-  ( run,
+  ( Lib.run,
     runCompiled,
     Lib.render,
     Lib.compile,
@@ -21,6 +21,12 @@ import Language.Gaiwan
 import Language.GaiwanDefs
 import Render
 import System.Exit
+import Language.GaiwanTypes (checkType, backPropagate)
+import CodeGen.Pipelining (prepare)
+import OpenCL (convertPlan, mkOpenRunner, run)
+import Foreign
+import Foreign.Storable
+import Foreign.C (CInt)
 
 someFunc = Lib.compile
 
@@ -53,8 +59,27 @@ mkCode (Prog defines main) =
 -- mapM_ registerDef defines
 --- mkOpenCLKernelCode main
 
-convert :: Program a -> IO [[Integer]] -- TODO figure aout what a should be
-convert program = undefined
+convert :: Program String -> IO [[Integer]] -- TODO figure aout what a should be
+convert program =  do
+    let tp = checkType program >>= (\p -> evalStateT (backPropagate p) 0)
+    case tp of
+      (Left s) -> do
+          print $ "Could not run: " ++ show s
+          return []
+      (Right typedProgramFull) -> do
+          let (code, actions) = prepare typedProgramFull
+          plan <- convertPlan actions
+          case plan of
+            (Left s) -> do
+              print $ "Could not convert plan in envionment: " ++ show s
+              return []
+            (Right (ocactions, defines)) -> do
+               runner <- mkOpenRunner convertor code defines
+               OpenCL.run runner ocactions
+
+convertor :: Int -> Ptr CInt -> IO [Integer]
+convertor size ptr = map toInteger <$> mapM (peekElemOff ptr) [0 .. (min size 100) - 1]
+
 
 -- runOpenCL $ mkCode program
 

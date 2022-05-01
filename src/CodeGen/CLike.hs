@@ -68,8 +68,8 @@ mkCCode unknownCode = error $ "Could not convert code:" ++ (take 30 $ show unkno
 kernelTemplate :: KernelName -> [ReservedBuffer] -> [ReservedBuffer] -> [(String, String)] -> String
 kernelTemplate name buffers buffersout code =
   mkKernelShell name (buffers ++ buffersout) $
-    " int int_index = get_global_id(0);\n"
-      ++ intercalate "\n" (zipWith (gpuBufferAssign "int_index") buffersout code)
+    " int int_i = get_global_id(0);\n"
+      ++ intercalate "\n" (zipWith (gpuBufferAssign "int_i") buffersout code)
 
 mkKernelShell :: KernelName -> [ReservedBuffer] -> String -> String
 mkKernelShell (KernelName name) args code = "void kernel " ++ name ++ "(" ++ argsStr ++ ")" ++ "{ \n" ++ code ++ " \n};"

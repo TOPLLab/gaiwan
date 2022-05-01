@@ -38,13 +38,13 @@ spec = do
         `shouldBe` ( [ AllocBuffer (CLGPUBuffer 1 4),
                        AllocBuffer (CLGPUBuffer 2 4),
                        MakeKernel "Read a buffer" [CLGPUBuffer 0 4] (Range 0 0 0),
-                       MakeKernel "KernelName \"kernel0\"" [CLGPUBuffer 0 4, CLGPUBuffer 1 4] (Range 4 0 0),
-                       MakeKernel "KernelName \"kernel1\"" [CLGPUBuffer 1 4, CLGPUBuffer 2 4] (Range 4 0 0),
-                       MakeKernel "KernelName \"kernel2\"" [CLGPUBuffer 2 4, CLGPUBuffer 1 4] (Range 4 0 0),
-                       MakeKernel "KernelName \"kernel3\"" [CLGPUBuffer 1 4, CLGPUBuffer 2 4] (Range 4 0 0),
-                       MakeKernel "KernelName \"kernel4\"" [CLGPUBuffer 2 4, CLGPUBuffer 1 4] (Range 4 0 0),
-                       MakeKernel "KernelName \"kernel5\"" [CLGPUBuffer 1 4, CLGPUBuffer 2 4] (Range 4 0 0),
-                       MakeKernel "KernelName \"kernel6\"" [CLGPUBuffer 2 4, CLGPUBuffer 1 4] (Range 4 0 0),
+                       MakeKernel "kernel0" [CLGPUBuffer 0 4, CLGPUBuffer 1 4] (Range 4 0 0),
+                       MakeKernel "kernel1" [CLGPUBuffer 1 4, CLGPUBuffer 2 4] (Range 4 0 0),
+                       MakeKernel "kernel2" [CLGPUBuffer 2 4, CLGPUBuffer 1 4] (Range 4 0 0),
+                       MakeKernel "kernel3" [CLGPUBuffer 1 4, CLGPUBuffer 2 4] (Range 4 0 0),
+                       MakeKernel "kernel4" [CLGPUBuffer 2 4, CLGPUBuffer 1 4] (Range 4 0 0),
+                       MakeKernel "kernel5" [CLGPUBuffer 1 4, CLGPUBuffer 2 4] (Range 4 0 0),
+                       MakeKernel "kernel6" [CLGPUBuffer 2 4, CLGPUBuffer 1 4] (Range 4 0 0),
                        ExtractBuffer (CLGPUBuffer 1 4)
                      ] ::
                        [OpenCL.OpenCLAction]
