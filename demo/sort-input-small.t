@@ -25,10 +25,9 @@ abstraction bitonic_select(round:int , arrPerBlock:int) {
     }
 }
 
-return a | bitonic_select(0,1)
--- return a |
--- 2:round {
---     (round+1):step {
---         bitonic_select(round,2^(round - step))
---     }
--- }
+return a |
+4:round {
+    (round+1):step {
+        bitonic_select(round,2^(round - step))
+    }
+}
