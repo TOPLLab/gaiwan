@@ -9,7 +9,7 @@ module OpenCL
   )
 where
 
-import Code.Definitions (varFiller)
+import Code.Definitions (varFiller, KernelName (KernelName))
 import qualified Code.Definitions as Defs
 import qualified Control.Exception as Ex (catch)
 import Control.Monad
@@ -96,10 +96,10 @@ analyzeReads ((Defs.ReadBuffer s rb) : gas) = M.insert s rb $ analyzeReads gas
 analyzeReads (_ : gas) = analyzeReads gas
 
 convertS :: [(String, (Int, Ptr CInt))] -> (GaiwanBuf Int -> Either String (GShape Void, Int)) -> Defs.GPUAction -> StateT (M.Map Defs.ReservedBuffer CLGPUBuffer) (Either String) [OpenCLAction]
-convertS _ _ (Defs.CallKernel kn rbs [outBuf]) = do
+convertS _ _ (Defs.CallKernel (KernelName n) rbs [outBuf]) = do
   bufs <- mapM findBuf rbs
   bufo <- findBuf outBuf
-  return $ [MakeKernel (show kn) (bufs ++ [bufo]) (case bufo of (CLGPUBuffer _ s) -> Range s 0 0)]
+  return $ [MakeKernel n (bufs ++ [bufo]) (case bufo of (CLGPUBuffer _ s) -> Range s 0 0)]
 convertS _ _ (Defs.CallKernel kn rbs _) = fail "More than one outputBuf"
 convertS lt vt (Defs.ReadBuffer str rb@(Defs.ReservedBuffer gbn gb)) = do
   m <- get
