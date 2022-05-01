@@ -462,7 +462,7 @@ spec = do
 
   describe "Language.Gaiwan (parser): check if all demos parse" $ do
     files <- runIO $ listDirectory "demo"
-    ffiles <- runIO $ mapM demoNameAndContents files
+    ffiles <- runIO $ mapM demoNameAndContents $ filter isTFile files
     mapM_
       ( \(fname, f) ->
           it ("parses " ++ show fname) $
@@ -472,7 +472,8 @@ spec = do
 
   describe "Language.Gaiwan (parser): check if all demos typecheck" $ do
     files <- runIO $ listDirectory "demo"
-    ffiles <- runIO $ mapM demoNameAndContents files
+    ffiles <- runIO $ mapM demoNameAndContents $ filter isTFile files
+
     mapM_
       ( \(fname, f) ->
           it ("parses " ++ show fname) $
@@ -629,22 +630,16 @@ spec = do
 
       it "plans a simple-mapper.t program correcty" $ do
         bptp <- readProgTyped "demo/simple-mapper.t"
-        tail (makePlan bptp) `shouldBe` [AllocBuffer (ReservedBuffer (GPUBufferName 0) (GaiwanBuf (GaiwanBufSize 33 1 0) GaiwanInt)), AllocBuffer (ReservedBuffer (GPUBufferName 1) (GaiwanBuf (GaiwanBufSize 33 1 0) GaiwanInt)), ReadBuffer "a" (ReservedBuffer (GPUBufferName 0) (GaiwanBuf (GaiwanBufSize 33 1 0) GaiwanInt)), CallKernel (KernelName "kernel0") [ReservedBuffer (GPUBufferName 0) (GaiwanBuf (GaiwanBufSize 33 1 0) GaiwanInt)] [ReservedBuffer (GPUBufferName 1) (GaiwanBuf (GaiwanBufSize 33 1 0) GaiwanInt)], OutputBuffer [ReservedBuffer (GPUBufferName 1) (GaiwanBuf (GaiwanBufSize 33 1 0) GaiwanInt)]]
-
+        tail (makePlan bptp) `shouldBe` [AllocBuffer (ReservedBuffer (GPUBufferName 1) (GaiwanBuf (GaiwanBufSize 33 1 0) GaiwanInt)), ReadBuffer "a" (ReservedBuffer (GPUBufferName 0) (GaiwanBuf (GaiwanBufSize 33 1 0) GaiwanInt)), CallKernel (KernelName "kernel0") [ReservedBuffer (GPUBufferName 0) (GaiwanBuf (GaiwanBufSize 33 1 0) GaiwanInt)] [ReservedBuffer (GPUBufferName 1) (GaiwanBuf (GaiwanBufSize 33 1 0) GaiwanInt)], OutputBuffer [ReservedBuffer (GPUBufferName 1) (GaiwanBuf (GaiwanBufSize 33 1 0) GaiwanInt)]]
       it "plans a simple-shaper.t program correcty" $ do
         bptp <- readProgTyped "demo/simple-shaper.t"
-        tail (makePlan bptp) `shouldBe` [AllocBuffer (ReservedBuffer (GPUBufferName 0) (GaiwanBuf (GaiwanBufSize 33 1 0) GaiwanInt)), AllocBuffer (ReservedBuffer (GPUBufferName 1) (GaiwanBuf (GaiwanBufSize 33 2 0) GaiwanInt)), ReadBuffer "a" (ReservedBuffer (GPUBufferName 0) (GaiwanBuf (GaiwanBufSize 33 1 0) GaiwanInt)), CallKernel (KernelName "kernel0") [ReservedBuffer (GPUBufferName 0) (GaiwanBuf (GaiwanBufSize 33 1 0) GaiwanInt)] [ReservedBuffer (GPUBufferName 1) (GaiwanBuf (GaiwanBufSize 33 2 0) GaiwanInt)], OutputBuffer [ReservedBuffer (GPUBufferName 1) (GaiwanBuf (GaiwanBufSize 33 2 0) GaiwanInt)]]
-
+        tail (makePlan bptp) `shouldBe` [AllocBuffer (ReservedBuffer (GPUBufferName 1) (GaiwanBuf (GaiwanBufSize 33 2 0) GaiwanInt)), ReadBuffer "a" (ReservedBuffer (GPUBufferName 0) (GaiwanBuf (GaiwanBufSize 33 1 0) GaiwanInt)), CallKernel (KernelName "kernel0") [ReservedBuffer (GPUBufferName 0) (GaiwanBuf (GaiwanBufSize 33 1 0) GaiwanInt)] [ReservedBuffer (GPUBufferName 1) (GaiwanBuf (GaiwanBufSize 33 2 0) GaiwanInt)], OutputBuffer [ReservedBuffer (GPUBufferName 1) (GaiwanBuf (GaiwanBufSize 33 2 0) GaiwanInt)]]
       it "plans a simple-mapper-shaper.t program correcty" $ do
         bptp <- readProgTyped "demo/simple-mapper-shaper.t"
         tail (makePlan bptp)
-          `shouldBe` [ AllocBuffer (ReservedBuffer (GPUBufferName 0) (GaiwanBuf (GaiwanBufSize 53 1 0) GaiwanInt)),
-                       AllocBuffer (ReservedBuffer (GPUBufferName 1) (GaiwanBuf (GaiwanBufSize 53 2 0) GaiwanInt)),
+          `shouldBe` [ AllocBuffer (ReservedBuffer (GPUBufferName 1) (GaiwanBuf (GaiwanBufSize 53 2 0) GaiwanInt)),
                        ReadBuffer "a" (ReservedBuffer (GPUBufferName 0) (GaiwanBuf (GaiwanBufSize 53 1 0) GaiwanInt)),
-                       CallKernel
-                         (KernelName "kernel0")
-                         [ReservedBuffer (GPUBufferName 0) (GaiwanBuf (GaiwanBufSize 53 1 0) GaiwanInt)]
-                         [ReservedBuffer (GPUBufferName 1) (GaiwanBuf (GaiwanBufSize 53 2 0) GaiwanInt)],
+                       CallKernel (KernelName "kernel0") [ReservedBuffer (GPUBufferName 0) (GaiwanBuf (GaiwanBufSize 53 1 0) GaiwanInt)] [ReservedBuffer (GPUBufferName 1) (GaiwanBuf (GaiwanBufSize 53 2 0) GaiwanInt)],
                        OutputBuffer [ReservedBuffer (GPUBufferName 1) (GaiwanBuf (GaiwanBufSize 53 2 0) GaiwanInt)]
                      ]
 
@@ -689,6 +684,11 @@ spec = do
                        OutputBuffer
                          [ReservedBuffer (GPUBufferName 2) (GaiwanBuf (GaiwanBufSize 53 1 0) GaiwanInt)]
                      ]
+
+isTFile :: FilePath -> Bool
+isTFile [] = False
+isTFile ".t" = True
+isTFile (c : s) = isTFile s
 
 --      it "plans a sort-input-small.t program correcty" $ do
 --        bptp <- readProgTyped "demo/sort-input-small.t"

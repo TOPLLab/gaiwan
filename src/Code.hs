@@ -38,9 +38,9 @@ compile c = (deviceCode c, bufAlloc ++ prog)
   where
     prog = flattenBuffers $ hostCode c
     bufAlloc = C.AllocBuffer <$> toList (collectBuffers prog)
-    collectBuffers ((CallKernel _ inBufs outBufs) : r) = S.union (collectBuffers r) $ fromList (inBufs ++ outBufs)
-    collectBuffers ((ReadBuffer s rb) : r) = S.union (collectBuffers r) $ fromList [rb]
-    collectBuffers ((OutputBuffer rbs) : r) = S.union (collectBuffers r) $ fromList rbs
+    collectBuffers ((CallKernel _ inBufs outBufs) : r) = S.union (collectBuffers r) $ fromList outBufs
+    --collectBuffers ((ReadBuffer s rb) : r) = S.union (collectBuffers r) $ fromList [rb]
+    --collectBuffers ((OutputBuffer rbs) : r) = S.union (collectBuffers r) $ fromList rbs
     collectBuffers (_ : r) = collectBuffers r
     collectBuffers [] = empty
 

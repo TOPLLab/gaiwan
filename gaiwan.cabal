@@ -57,6 +57,7 @@ library
     , array
     , base >=4.7 && <5
     , bytestring
+    , filepath
     , containers
     , lens
     , mtl
@@ -117,6 +118,7 @@ test-suite gaiwan-test
       LanguageSpec
       UnificationSpec
       RenderSpec
+      OpenCLSpec
       --TestPrograms
       Paths_gaiwan
   hs-source-dirs:

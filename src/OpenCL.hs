@@ -4,24 +4,31 @@ module OpenCL
     Range (..),
     OpenCLRunner (), -- Constructor hidden
     mkOpenRunner,
+    convertPlan,
     run,
   )
 where
 
+import Code.Definitions (varFiller)
+import qualified Code.Definitions as Defs
 import qualified Control.Exception as Ex (catch)
 import Control.Monad
+import Control.Monad.State
 import Control.Parallel.OpenCL
 import Data.List
-import Data.Maybe (fromMaybe)
+import qualified Data.Map as M
+import Data.Maybe (fromJust, fromMaybe)
 import Foreign
 import Foreign.C
+import Language.GaiwanDefs
 import System.Exit
+import System.FilePath
 
 -- | An openCL buffer with a certrain Id and a size
 data CLGPUBuffer = CLGPUBuffer Int Int deriving (Show, Eq)
 
 -- | A range
-data Range = Range Int Int Int deriving (Show)
+data Range = Range Int Int Int deriving (Show, Eq)
 
 -- | OpenCL actions that can be performed
 data OpenCLAction
@@ -30,7 +37,7 @@ data OpenCLAction
   | FreeBuffer CLGPUBuffer
   | ReadBuffer (Ptr CInt) CLGPUBuffer
   | ExtractBuffer CLGPUBuffer
-  deriving (Show)
+  deriving (Show, Eq)
 
 -- | Information to keep between GPU invocations
 data RunCLData a = RunCLData
@@ -49,6 +56,83 @@ data OpenCLRunner a = OpenCLRunner (OpenCLAction -> IO (OpenCLRunner a)) (Maybe 
 rangeArr (Range a 0 0) = [a]
 rangeArr (Range a b 0) = [a, b]
 rangeArr (Range a b c) = [a, b, c]
+
+convertPlan :: [Defs.GPUAction] -> IO (Either String ([OpenCLAction], [(String, Int)]))
+convertPlan p = do
+  let readMap = analyzeReads p
+  returnedData <- mapM findRealData $ M.keys readMap
+  let returnedMap = (M.fromList returnedData)
+  let varFillFunEither =
+        varFiller $
+          M.elems
+            ( M.intersectionWith
+                (\(Defs.ReservedBuffer n gb) (len, _) -> (gb, (GaiwanInt, len)))
+                readMap
+                returnedMap
+            )
+  return $ case varFillFunEither of
+    (Left s) -> Left s
+    (Right varFillFun) -> do
+      case runStateT (mapM (convertS returnedData varFillFun) p) (M.empty) of
+        (Left s) -> (Left s)
+        (Right (actions, assignedBuffers)) -> Right $ (concat actions, map defiveLENDefines $ M.toList assignedBuffers)
+
+defiveLENDefines :: (Defs.ReservedBuffer, CLGPUBuffer) -> (String, Int)
+defiveLENDefines
+  ( (Defs.ReservedBuffer gbn (GaiwanBuf (GaiwanBufSize n i j) gs)),
+    (CLGPUBuffer _ size)
+    ) =
+    ("LEN_" ++ show n ++ "_" ++ show i ++ "_" ++ show j, size)
+
+findRealData :: String -> IO (String, (Int, Ptr CInt))
+findRealData f = do
+  dat <- read <$> (readFile $ "demo" </> "input" </> (f ++ ".int.gw"))
+  ptr <- newArray (dat :: [CInt])
+  return (f, (length dat, ptr))
+
+analyzeReads :: [Defs.GPUAction] -> M.Map String Defs.ReservedBuffer
+analyzeReads [] = M.empty
+analyzeReads ((Defs.ReadBuffer s rb) : gas) = M.insert s rb $ analyzeReads gas
+analyzeReads (_ : gas) = analyzeReads gas
+
+convertS :: [(String, (Int, Ptr CInt))] -> (GaiwanBuf Int -> Either String (GShape Void, Int)) -> Defs.GPUAction -> StateT (M.Map Defs.ReservedBuffer CLGPUBuffer) (Either String) [OpenCLAction]
+convertS _ _ (Defs.CallKernel kn rbs [outBuf]) = do
+  bufs <- mapM findBuf rbs
+  bufo <- findBuf outBuf
+  return $ [MakeKernel (show kn) (bufs ++ [bufo]) (case bufo of (CLGPUBuffer _ s) -> Range s 0 0)]
+convertS _ _ (Defs.CallKernel kn rbs _) = fail "More than one outputBuf"
+convertS lt vt (Defs.ReadBuffer str rb@(Defs.ReservedBuffer gbn gb)) = do
+  m <- get
+  case (M.lookup rb m) of
+    Just clb -> return [] -- nothing to do we already read the file to the buffer
+    Nothing -> do
+      (shape, size) <- lift $ vt gb
+      let clbuf = (CLGPUBuffer (Defs.reservedBufferId rb) size)
+      put $ M.insert rb clbuf m
+      return $ [ReadBuffer (snd $ fromJust $ lookup str lt) clbuf]
+convertS _ vt (Defs.AllocBuffer rb@(Defs.ReservedBuffer gbn gb)) = do
+  m <- get
+  case (M.lookup rb m) of
+    Just clb -> return [] -- nothing to do we already read the file to the buffer
+    Nothing -> do
+      (shape, size) <- lift $ vt gb
+      let clbuf = (CLGPUBuffer (Defs.reservedBufferId rb) size)
+      put $ M.insert rb clbuf m
+      return [AllocBuffer clbuf]
+convertS _ vt (Defs.OutputBuffer rbs) = do
+  m <- get
+  case (mapM (`M.lookup` m) rbs) of
+    Just clb -> return $ map (ExtractBuffer) clb
+    Nothing -> fail "cannot outpurt buffers we did not allocate"
+convertS _ vt (Defs.Infoz str) = return []
+
+findBuf :: Defs.ReservedBuffer -> StateT (M.Map Defs.ReservedBuffer CLGPUBuffer) (Either String) CLGPUBuffer
+findBuf k = do
+  m <- get
+  let lookupRestult = M.lookup k m
+  case lookupRestult of
+    Nothing -> fail $ "could not find " ++ show (k, m)
+    (Just any) -> return any
 
 mkOpenRunner :: (Int -> Ptr CInt -> IO a) -> String -> [(String, Int)] -> IO (OpenCLRunner a)
 mkOpenRunner convertor programSource extraDefines = do
