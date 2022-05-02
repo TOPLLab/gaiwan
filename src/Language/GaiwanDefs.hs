@@ -243,11 +243,13 @@ findMatches ePred letPred e = if ePred e then (e : (findMatchesRec e)) else (fin
 simplifyExpS :: (Eq a, Ord a, Show a) => GExp a -> State (SimplifyData a) (GExp a)
 simplifyExpS e = do
   let result = mapExp _simplifyExp e
-  resultLifted <- substCommon result
-
-  if resultLifted == e
-    then return e
-    else simplifyExpS resultLifted
+  if result == e
+    then do
+      resultLifted <- substCommon result
+      if resultLifted == e
+        then return e
+        else simplifyExpS resultLifted
+    else simplifyExpS result
   where
     doRec esub = mapExp _simplifyExp esub
 

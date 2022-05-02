@@ -12,21 +12,22 @@ import Code
 -- import CodeGen.OpenCL
 -- import OpenCL
 
+import CodeGen.Pipelining (prepare)
 import Control.Monad
 import Control.Monad.State.Lazy
 import qualified Data.ByteString.Lazy as BS
 import Data.List
 import Data.Maybe
+import Debug.Trace
+import Foreign
+import Foreign.C (CInt)
+import Foreign.Storable
 import Language.Gaiwan
 import Language.GaiwanDefs
+import Language.GaiwanTypes (backPropagate, checkType)
+import OpenCL (convertPlan, mkOpenRunner, run)
 import Render
 import System.Exit
-import Language.GaiwanTypes (checkType, backPropagate)
-import CodeGen.Pipelining (prepare)
-import OpenCL (convertPlan, mkOpenRunner, run)
-import Foreign
-import Foreign.Storable
-import Foreign.C (CInt)
 
 someFunc = Lib.compile
 
@@ -60,26 +61,28 @@ mkCode (Prog defines main) =
 --- mkOpenCLKernelCode main
 
 convert :: Program String -> IO [[Integer]] -- TODO figure aout what a should be
-convert program =  do
-    let tp = checkType program >>= (\p -> evalStateT (backPropagate p) 0)
-    case tp of
-      (Left s) -> do
-          print $ "Could not run: " ++ show s
+convert program = do
+  let tp = checkType program >>= (\p -> evalStateT (backPropagate p) 0)
+  case tp of
+    (Left s) -> do
+      print $ "Could not run: " ++ show s
+      return []
+    (Right typedProgramFull) -> do
+      traceM "pre plan made"
+      let (code, actions) = prepare typedProgramFull
+      plan <- convertPlan actions
+      traceM "plan made"
+      case plan of
+        (Left s) -> do
+          print $ "Could not convert plan in envionment: " ++ show s
           return []
-      (Right typedProgramFull) -> do
-          let (code, actions) = prepare typedProgramFull
-          plan <- convertPlan actions
-          case plan of
-            (Left s) -> do
-              print $ "Could not convert plan in envionment: " ++ show s
-              return []
-            (Right (ocactions, defines)) -> do
-               runner <- mkOpenRunner convertor code defines
-               OpenCL.run runner ocactions
+        (Right (ocactions, defines)) -> do
+          runner <- mkOpenRunner convertor code defines
+          traceM "runner made"
+          OpenCL.run runner ocactions
 
 convertor :: Int -> Ptr CInt -> IO [Integer]
-convertor size ptr = map toInteger <$> mapM (peekElemOff ptr) [0 .. (min size 100) - 1]
-
+convertor size ptr = map toInteger <$> mapM (peekElemOff ptr) ([0 .. (min size 100) - 1] ++ ([size - 2, size - 1]))
 
 -- runOpenCL $ mkCode program
 

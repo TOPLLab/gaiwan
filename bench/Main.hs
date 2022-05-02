@@ -2,7 +2,7 @@
 
 module Main where
 
-import CodeGen.OpenCL
+import OpenCL
 import Criterion.Main
 import qualified Data.ByteString.Lazy as BS
 import Data.Either
@@ -13,21 +13,19 @@ import System.Environment.Blank
 
 main :: IO ()
 main = do
-  code <- readFile "demo/sort.t"
+  code <- readFile "demo/sort-input.t"
+  let Right p = checkParse code
+
+
   -- Bang means strict evaluation
   -- We need to ensure that this is not counted in the benchmark
-  let !c = BS.toStrict $ fromRight (error "Could not compile") $ compile code
-  let !d = BS.fromStrict c
+  let !pp = p
   defaultMain
     [ bgroup
         "sort"
         [ bench "test" $
             nfIO $
-              runOnlyFirst d
+              convert pp
         ]
     ]
 
--- | An openCL Runner that only reads the first 10 elements of each buffer
-runOnlyFirst = runOpenCLCompiledWithConv conv
-  where
-    conv size ptr = map toInteger <$> mapM (peekElemOff ptr) [0 .. min size 10 - 1]

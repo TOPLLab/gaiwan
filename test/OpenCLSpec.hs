@@ -6,7 +6,7 @@ import Data.Map (fromList)
 import Language.Gaiwan
 import Language.GaiwanDefs
 import Language.GaiwanTypes
-import OpenCL (CLGPUBuffer (CLGPUBuffer), OpenCLAction (AllocBuffer, ExtractBuffer, MakeKernel, ReadBuffer), Range (Range), convertPlan)
+import OpenCL (CLGPUBuffer (CLGPUBuffer), OpenCLAction (AllocBuffer, ExtractBuffer, FreeBuffer, MakeKernel, ReadBuffer), Range (Range), convertPlan)
 import Test.Hspec
 import Test.QuickCheck
 
@@ -35,17 +35,20 @@ spec = do
     it "Transforms a sort program" $ do
       Right (v, defines) <- convertPlan demoPlan
       (map (\c -> case c of (ReadBuffer _ buf) -> MakeKernel "Read a buffer" [buf] (Range 0 0 0); a -> a) v) -- remove the pointer from the test
-        `shouldBe` ( [ AllocBuffer (CLGPUBuffer 1 4),
-                       AllocBuffer (CLGPUBuffer 2 4),
-                       MakeKernel "Read a buffer" [CLGPUBuffer 0 4] (Range 0 0 0),
-                       MakeKernel "kernel0" [CLGPUBuffer 0 4, CLGPUBuffer 1 4] (Range 4 0 0),
-                       MakeKernel "kernel1" [CLGPUBuffer 1 4, CLGPUBuffer 2 4] (Range 4 0 0),
-                       MakeKernel "kernel2" [CLGPUBuffer 2 4, CLGPUBuffer 1 4] (Range 4 0 0),
-                       MakeKernel "kernel3" [CLGPUBuffer 1 4, CLGPUBuffer 2 4] (Range 4 0 0),
-                       MakeKernel "kernel4" [CLGPUBuffer 2 4, CLGPUBuffer 1 4] (Range 4 0 0),
-                       MakeKernel "kernel5" [CLGPUBuffer 1 4, CLGPUBuffer 2 4] (Range 4 0 0),
-                       MakeKernel "kernel6" [CLGPUBuffer 2 4, CLGPUBuffer 1 4] (Range 4 0 0),
-                       ExtractBuffer (CLGPUBuffer 1 4)
+        `shouldBe` ( [ AllocBuffer (CLGPUBuffer 1 16),
+                       AllocBuffer (CLGPUBuffer 2 16),
+                       MakeKernel "Read a buffer" [CLGPUBuffer 0 16] (Range 0 0 0),
+                       MakeKernel "kernel0" [CLGPUBuffer 0 16, CLGPUBuffer 1 16] (Range 16 0 0),
+                       MakeKernel "kernel1" [CLGPUBuffer 1 16, CLGPUBuffer 2 16] (Range 16 0 0),
+                       MakeKernel "kernel2" [CLGPUBuffer 2 16, CLGPUBuffer 1 16] (Range 16 0 0),
+                       MakeKernel "kernel3" [CLGPUBuffer 1 16, CLGPUBuffer 2 16] (Range 16 0 0),
+                       MakeKernel "kernel4" [CLGPUBuffer 2 16, CLGPUBuffer 1 16] (Range 16 0 0),
+                       MakeKernel "kernel5" [CLGPUBuffer 1 16, CLGPUBuffer 2 16] (Range 16 0 0),
+                       MakeKernel "kernel6" [CLGPUBuffer 2 16, CLGPUBuffer 1 16] (Range 16 0 0),
+                       ExtractBuffer (CLGPUBuffer 1 16),
+                       FreeBuffer (CLGPUBuffer 0 16),
+                       FreeBuffer (CLGPUBuffer 1 16),
+                       FreeBuffer (CLGPUBuffer 2 16)
                      ] ::
                        [OpenCL.OpenCLAction]
                    )

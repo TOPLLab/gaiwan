@@ -17,21 +17,15 @@ abstraction bitonic_select(round:int , arrPerBlock:int) {
         let arrowBlock = i/(2*arrPerBlock) in
             let arrowBlockStart = arrowBlock * arrPerBlock in
             let arrowOffset = i % arrPerBlock in
-            let arrow = d[arrowBlock * arrPerBlock + arrowOffset] in
-            if(arrowBlockStart*2+arrPerBlock < i){
-                arrow[[0]]
+            if(arrowBlockStart*2+arrPerBlock < i+1){
+                d[arrowBlockStart + arrowOffset][[0]]
             }else{
-                arrow[[1]]
+                d[arrowBlockStart + arrowOffset][[1]]
             }
     }
 }
-abstraction randomizer() {
-    shaper randomizer(i, lol:A[n]) : int[n]{
-        (i * 593) % 1000
-    }
-}
 
-return a |
+return b |
 25:round {
     (round+1):step {
         bitonic_select(round,2^(round - step))

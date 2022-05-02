@@ -9,15 +9,21 @@ module OpenCL
   )
 where
 
-import Code.Definitions (varFiller, KernelName (KernelName))
+import Code.Definitions (KernelName (KernelName), varFiller)
 import qualified Code.Definitions as Defs
 import qualified Control.Exception as Ex (catch)
 import Control.Monad
 import Control.Monad.State
 import Control.Parallel.OpenCL
+import Data.Bits
+import Data.ByteString (useAsCStringLen)
+import Data.ByteString as BS hiding (concat, filter, intercalate, map, putStrLn)
+import Data.ByteString.Unsafe (unsafeUseAsCStringLen)
 import Data.List
 import qualified Data.Map as M
 import Data.Maybe (fromJust, fromMaybe)
+import Data.Word
+import Debug.Trace
 import Foreign
 import Foreign.C
 import Language.GaiwanDefs
@@ -75,7 +81,14 @@ convertPlan p = do
     (Right varFillFun) -> do
       case runStateT (mapM (convertS returnedData varFillFun) p) (M.empty) of
         (Left s) -> (Left s)
-        (Right (actions, assignedBuffers)) -> Right $ (concat actions, map defiveLENDefines $ M.toList assignedBuffers)
+        (Right (actions, assignedBuffers)) ->
+          Right $
+            ( concat $ actions ++ [freeUsedBuffers assignedBuffers],
+              map defiveLENDefines $ M.toList assignedBuffers
+            )
+
+freeUsedBuffers :: M.Map Defs.ReservedBuffer CLGPUBuffer -> [OpenCLAction]
+freeUsedBuffers m = map (FreeBuffer) $ nub $ M.elems m
 
 defiveLENDefines :: (Defs.ReservedBuffer, CLGPUBuffer) -> (String, Int)
 defiveLENDefines
@@ -86,9 +99,16 @@ defiveLENDefines
 
 findRealData :: String -> IO (String, (Int, Ptr CInt))
 findRealData f = do
-  dat <- read <$> (readFile $ "demo" </> "input" </> (f ++ ".int.gw"))
-  ptr <- newArray (dat :: [CInt])
-  return (f, (length dat, ptr))
+  dat <- (BS.readFile $ "demo" </> "input" </> (f ++ ".int.gw"))
+  dd <- unsafeUseAsCStringLen dat $ \(toTmpPtr, len) -> do
+    let newElemSize = sizeOf (0 :: CInt)
+    let oldElemSize = sizeOf (0 :: CChar)
+    arr <- mallocArray len :: IO (Ptr CChar)
+    copyArray arr toTmpPtr len
+    case (divMod (len * oldElemSize) newElemSize) of
+      (intLen, 0) -> return (intLen, castPtr arr)
+      _ -> fail $ "Could not convert " ++ show len ++ " chars of size " ++ show oldElemSize ++ " to ints of size " ++ show newElemSize
+  return (f, dd)
 
 analyzeReads :: [Defs.GPUAction] -> M.Map String Defs.ReservedBuffer
 analyzeReads [] = M.empty
@@ -141,7 +161,6 @@ mkOpenRunner convertor programSource extraDefines = do
   (dev : _) <- clGetDeviceIDs platform CL_DEVICE_TYPE_ALL
   context <- clCreateContext [] [dev] print
   q <- clCreateCommandQueue context dev [CL_QUEUE_PROFILING_ENABLE]
-
   -- Initialize Kernel
   program <- clCreateProgramWithSource context programSource
   Ex.catch
@@ -186,6 +205,7 @@ getGpuBuffer d buffer = fromMaybe (error "could not find buffer") $ lookup buffe
 
 -- | Run a single action, meant to be run from
 runAction :: RunCLData a -> OpenCLAction -> IO (OpenCLRunner a)
+--runAction _ a | trace (show a) False = undefined
 runAction d (MakeKernel name args range) = do
   kernel <- clCreateKernel (program d) name
   zipWithM_ (\i n -> clSetKernelArgSto kernel i $ getGpuBuffer d n) [0 ..] args

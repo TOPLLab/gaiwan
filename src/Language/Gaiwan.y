@@ -119,6 +119,7 @@ type : shape {AShape $1 }
      | shape '[' int '*' var ']'  { ABuf $ GaiwanBuf (GaiwanBufSize $5 $3 0) $1 }
      | shape '[' var '+' int ']'  { ABuf $ GaiwanBuf (GaiwanBufSize $3 1 $5) $1 }
      | shape '[' var ']'  { ABuf $ GaiwanBuf (GaiwanBufSize $3 1 0) $1 }
+     | shape '[' int ']'  { ABuf $ GaiwanBuf (GaiwanBufSize "freedom" 0 $3) $1 }
 
 shape :: { GShape String }
 shape : int { GaiwanInt }
