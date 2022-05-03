@@ -25,7 +25,7 @@ abstraction bitonic_select(round:int , arrPerBlock:int) {
     }
 }
 
-return b |
+return size33554432 |
 25:round {
     (round+1):step {
         bitonic_select(round,2^(round - step))

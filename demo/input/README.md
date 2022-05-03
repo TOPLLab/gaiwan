@@ -14,4 +14,18 @@ creates `2^25` random numbers
 
 ```
 dd if=/dev/urandom of=demo/input/b.int.gw bs=4 count=33554432
+# Or faster:
+s=33554432
+dd if=/dev/urandom of=demo/input/size$s.int.gw bs=256 count=$(( s / 64 ))
+```
+
+## Benchmark input files
+
+Input files for the benchmarks can be generated with
+
+```sh
+for s in {1024,2048,4096,8192,16384,32768,65536,131072,262144,524288,1048576,2097152,4194304,8388608,16777216,33554432};
+do
+    echo s; dd if=/dev/urandom of=$s.int.gw bs=256 count=$(( s / 64 ))
+done
 ```
