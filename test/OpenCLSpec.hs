@@ -6,7 +6,7 @@ import Data.Map (fromList)
 import Language.Gaiwan
 import Language.GaiwanDefs
 import Language.GaiwanTypes
-import OpenCL (CLGPUBuffer (CLGPUBuffer), OpenCLAction (AllocBuffer, ExtractBuffer, FreeBuffer, MakeKernel, ReadBuffer), Range (Range), convertPlan)
+import OpenCL (CLGPUBuffer (CLGPUBuffer), OpenCLAction (AllocBuffer, ExtractBuffer, FreeBuffer, MakeKernel, ReadBuffer, Release), Range (Range), convertPlan)
 import Test.Hspec
 import Test.QuickCheck
 
@@ -48,7 +48,8 @@ spec = do
                        ExtractBuffer (CLGPUBuffer 1 16),
                        FreeBuffer (CLGPUBuffer 0 16),
                        FreeBuffer (CLGPUBuffer 1 16),
-                       FreeBuffer (CLGPUBuffer 2 16)
+                       FreeBuffer (CLGPUBuffer 2 16),
+                       Release
                      ] ::
                        [OpenCL.OpenCLAction]
                    )

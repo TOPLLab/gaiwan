@@ -41,6 +41,7 @@ data OpenCLAction
   = MakeKernel String [CLGPUBuffer] Range
   | AllocBuffer CLGPUBuffer
   | FreeBuffer CLGPUBuffer
+  | Release
   | ReadBuffer (Ptr CInt) CLGPUBuffer
   | ExtractBuffer CLGPUBuffer
   deriving (Show, Eq)
@@ -83,7 +84,7 @@ convertPlan p = do
         (Left s) -> (Left s)
         (Right (actions, assignedBuffers)) ->
           Right $
-            ( concat $ actions ++ [freeUsedBuffers assignedBuffers],
+            ( concat $ actions ++ [freeUsedBuffers assignedBuffers] ++ [[Release]],
               map defiveLENDefines $ M.toList assignedBuffers
             )
 
@@ -210,6 +211,7 @@ runAction d (MakeKernel name args range) = do
   kernel <- clCreateKernel (program d) name
   zipWithM_ (\i n -> clSetKernelArgSto kernel i $ getGpuBuffer d n) [0 ..] args
   evt <- clEnqueueNDRangeKernel (queue d) kernel (rangeArr range) [] (waitlist d)
+  clReleaseKernel kernel
   returnAction (d {waitlist = [evt]}) Nothing
 runAction d (AllocBuffer gpub@(CLGPUBuffer _ size)) = do
   let elemSize = sizeOf (0 :: CInt)
@@ -220,6 +222,12 @@ runAction d (FreeBuffer gpub) = do
   let cbuf = getGpuBuffer d gpub
   clReleaseMemObject cbuf
   returnAction (d {gpuBuffers = filter (\(b, _) -> b /= gpub) (gpuBuffers d)}) Nothing
+-- renew definition to read buffer
+runAction d (Release) = do
+  clReleaseContext (context d)
+  clReleaseCommandQueue (queue d)
+  clReleaseProgram (program d)
+  returnAction (d {gpuBuffers = []}) Nothing
 -- renew definition to read buffer
 runAction d (ExtractBuffer gpub@(CLGPUBuffer _ size)) = do
   let elemSize = sizeOf (0 :: CInt)
