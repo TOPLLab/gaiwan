@@ -2,8 +2,8 @@
 
 module Main where
 
-import Control.Monad.State (evalStateT)
 import CodeGen.Pipelining (prepare)
+import Control.Monad.State (evalStateT)
 import Criterion.Main
 import qualified Data.ByteString.Lazy as BS
 import Data.Either
@@ -11,11 +11,11 @@ import Foreign
 import Foreign.Storable
 import Language.Gaiwan
 import Language.GaiwanDefs
-import Language.GaiwanTypes (backPropagate, checkType, TypedProgram)
+import Language.GaiwanTypes (TypedProgram, backPropagate, checkType)
 import Lib
+import Lib (convertTyped)
 import OpenCL
 import System.Environment.Blank
-import Lib (convertTyped)
 
 main :: IO ()
 main = do
@@ -32,11 +32,11 @@ main = do
               !tp <- checkType (p s)
               !tpb <- evalStateT (backPropagate tp) 0
               let !(!code, !actions) = prepare tpb
-              return (code,actions)
+              return (code, actions)
           )
           sizes
   let !tpsj = map rightOrError tps
-  let !benchIn  = zip tpsj sizes
+  let !benchIn = zip tpsj sizes
   mapM (print . show . length . show) tpsj
 
   -- Bang means strict evaluation
@@ -45,15 +45,15 @@ main = do
     [ bgroup
         "sort"
         ( map
-            ( \(!(code,actions), !s) ->
+            ( \(!(code, actions), !s) ->
                 ( bench ("test " ++ show s) $
-                     nfIO $ convertPrepared code actions
+                    nfIO $ convertPrepared code actions
                 )
             )
             benchIn
         )
     ]
 
-rightOrError :: Either String (a,b) -> (a,b)
+rightOrError :: Either String (a, b) -> (a, b)
 rightOrError (Left s) = error $ "failed to type prog " ++ s
-rightOrError !(Right !(!a,!b)) = (a,b)
+rightOrError !(Right !(!a, !b)) = (a, b)

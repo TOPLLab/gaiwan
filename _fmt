@@ -3,4 +3,5 @@ sed -i '/^.\{4,\}[^-]}$/{s/\s\{3,\}{/                                           
 prettier -w --prose-wrap=always **/*.md
 find src -iname "*.hs" | xargs ormolu -m inplace
 find test -iname "*.hs" | xargs ormolu -m inplace
+find bench -iname "*.hs" | xargs ormolu -m inplace
 
