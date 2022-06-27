@@ -154,7 +154,7 @@ processApplication complex@(PipelineStep inputs) task@(TShaper (GTransformType c
 processApplication (PipelineStep [(_, input)]) (TMapper (GTransformType contraints [fromT] [toT]) name [iname, dname] exp) = do
   -- addHostCode $ Infoz $ "add call to  " ++ name ++ "()"
   return $ PipelineStep [(toT, simpleSubstMult [((iname, False), theI), ((dname, False), input)] (toBExp exp))]
-processApplication _ a = error $ show a
+processApplication _ a = error $ show a -- TODO: handle reducer
 
 quiteSimple :: [(GaiwanBuf Int, BExp)] -> Bool
 quiteSimple s

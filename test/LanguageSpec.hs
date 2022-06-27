@@ -626,6 +626,10 @@ spec = do
                          [ReservedBuffer (GPUBufferName 2) (GaiwanBuf (GaiwanBufSize 53 1 0) GaiwanInt)]
                      ]
 
+      it "plans a simple-mapper-reducer.t program correcty" $ do
+        bptp <- readProgTyped "demo/simple-mapper-reducer.t"
+        tail (makePlan bptp) `shouldBe` [AllocBuffer (ReservedBuffer (GPUBufferName 1) (GaiwanBuf (GaiwanBufSize 33 1 0) GaiwanInt)), ReadBuffer "a" (ReservedBuffer (GPUBufferName 0) (GaiwanBuf (GaiwanBufSize 33 1 0) GaiwanInt)), CallKernel (KernelName "kernel0") [ReservedBuffer (GPUBufferName 0) (GaiwanBuf (GaiwanBufSize 33 1 0) GaiwanInt)] [ReservedBuffer (GPUBufferName 1) (GaiwanBuf (GaiwanBufSize 33 1 0) GaiwanInt)], OutputBuffer [ReservedBuffer (GPUBufferName 1) (GaiwanBuf (GaiwanBufSize 33 1 0) GaiwanInt)]]
+
 isTFile :: FilePath -> Bool
 isTFile [] = False
 isTFile ".t" = True

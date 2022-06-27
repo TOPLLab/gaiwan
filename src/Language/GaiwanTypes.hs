@@ -611,7 +611,7 @@ liftMaybeTuple (a, Nothing) = Nothing
 bufferType1 :: Maybe GBufOrShapeDefault -> TypeingOut (Maybe StmtShape)
 bufferType1 (Just (ABuf (GaiwanBuf (GaiwanBufSize sizeName slope intercept) b))) | slope == 0 && intercept == 1 = return $ Just b
 bufferType1 (Just (ABuf GaiwanBuf {})) = fail "non buffer type with length one for out of reducer"
-bufferType1 (Just _) = fail "non buffer type"
+bufferType1 (Just _) = fail "non buffer type given to reducer"
 bufferType1 Nothing = return Nothing
 
 -- | Get the type of the elements of a buffer argument
