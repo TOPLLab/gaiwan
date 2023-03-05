@@ -17,12 +17,12 @@ arbBinOp n m constructor = do
 arbSizedExp :: Int -> Gen Exp
 arbSizedExp m
   | m < 2 =
-    oneof
-      [ Int <$> choose (0, 55),
-        do
-          c <- choose (0, 10) :: Gen Int
-          Var ("var" ++ show c) <$> arbitrary
-      ]
+      oneof
+        [ Int <$> choose (0, 55),
+          do
+            c <- choose (0, 10) :: Gen Int
+            Var ("var" ++ show c) <$> arbitrary
+        ]
 arbSizedExp m = do
   n <- choose (0, m `div` 2)
   m <- choose (0, m `div` 2)

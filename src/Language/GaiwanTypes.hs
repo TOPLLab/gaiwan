@@ -35,7 +35,7 @@ import qualified Data.List as L
 import qualified Data.Map as M
 import Data.Maybe
 import Language.AlphaRename
---import Debug.Trace
+-- import Debug.Trace
 import Language.GaiwanDefs
 
 -- Type of a buffer
@@ -156,7 +156,7 @@ toTypedInstr definitions env (IApp "fresh" True [Int cnt]) = do
   varName <- fresh
   let outType = GTransformType M.empty [] [GaiwanBuf (GaiwanBufSize varName 0 cnt) GaiwanInt]
   return $ TIApp outType (TAbstraction (GaiwanArrow [] outType) "fresh" [] [TShaper outType "fresh" ["i"] (Var "i" False)]) []
-toTypedInstr definitions env a@(IApp name True args) = fail $ "error: built in funtions not supported yet" ++ show a --TODO
+toTypedInstr definitions env a@(IApp name True args) = fail $ "error: built in funtions not supported yet" ++ show a -- TODO
 toTypedInstr definitions env (IApp name False args) = do
   abstraction <- lookupAbst name definitions
   argTypes <- mapM (typeOfBody env) args
@@ -253,51 +253,51 @@ checkAbstrArgs (name, Just (AShape shape)) = return (name, shape)
 toTypedSmtEnv :: EnvType -> StmtDefault -> TypeingOut TypedTransform
 toTypedSmtEnv env (Mapper outType name args@[(indexArg, indexType), (dataVarName, Just (AShape dataVarType))] body)
   | maybeGaiwanInt indexType = do
-    AShape retType <- typeWithExpection outType ([(indexArg, AShape GaiwanInt), (dataVarName, AShape dataVarType)] ++ env) body
-    linBufSize <- fresh
-    return $
-      TMapper
-        ( GTransformType
-            M.empty
-            [GaiwanBuf linBufSize dataVarType]
-            [GaiwanBuf linBufSize retType]
-        )
-        name
-        (map fst args)
-        body
+      AShape retType <- typeWithExpection outType ([(indexArg, AShape GaiwanInt), (dataVarName, AShape dataVarType)] ++ env) body
+      linBufSize <- fresh
+      return $
+        TMapper
+          ( GTransformType
+              M.empty
+              [GaiwanBuf linBufSize dataVarType]
+              [GaiwanBuf linBufSize retType]
+          )
+          name
+          (map fst args)
+          body
 toTypedSmtEnv env (Mapper outType name args body) = fail "Incorrect argument given to mapper"
 toTypedSmtEnv env (Shaper outType@(Just (ABuf outTypeR@(GaiwanBuf _ elemType))) name args@((indexArg, indexType) : otherArgs) body)
   | maybeGaiwanInt indexType = do
-    extraArgsBuf <- checkSndJustList "all the arguments of a shaper must have a specified buffer type" otherArgs
-    extraArgs <- mapM liftMaybeBuff otherArgs
-    typeWithExpection (Just $ AShape elemType) (((indexArg, AShape GaiwanInt) : extraArgsBuf) ++ env) body
-    return $
-      TShaper
-        (GTransformType M.empty (map snd extraArgs) [outTypeR])
-        name
-        (map fst args)
-        body
+      extraArgsBuf <- checkSndJustList "all the arguments of a shaper must have a specified buffer type" otherArgs
+      extraArgs <- mapM liftMaybeBuff otherArgs
+      typeWithExpection (Just $ AShape elemType) (((indexArg, AShape GaiwanInt) : extraArgsBuf) ++ env) body
+      return $
+        TShaper
+          (GTransformType M.empty (map snd extraArgs) [outTypeR])
+          name
+          (map fst args)
+          body
 toTypedSmtEnv env s@(Shaper _ name ((indexArg, indexType) : otherArgs) _) | maybeGaiwanInt indexType = fail $ "Invalid out type for shaper, expected a buffer for " ++ show s
 toTypedSmtEnv env s@Shaper {} = fail $ "Incorrect argument given to " ++ show s
 toTypedSmtEnv env (Reducer outType name args@[(indexArg, indexType), (accArg, accType), (dataArg, dataType@(Just dataTypeR))] initExp body)
   | maybeGaiwanInt indexType = do
-    AShape checkecAccType <- typeWithExpection accType env initExp
-    if AShape checkecAccType == dataTypeR then return () else fail "Accumulator type and init expression are not of the same type"
-    outElemType <- bufferType1 outType
-    AShape checkedOutType <-
-      typeWithExpectionAndJustArgs
-        (AShape <$> outElemType)
-        ( [(indexArg, Just $ AShape GaiwanInt), (accArg, Just $ AShape checkecAccType), (dataArg, dataType)] ++ map (second Just) env
-        )
-        body
-    varName <- fresh
-    return $
-      TReducer
-        (GTransformType M.empty [GaiwanBuf (GaiwanBufSize varName 1 0) checkecAccType] [GaiwanBuf (GaiwanBufSize varName 0 1) checkedOutType])
-        name
-        (map fst args)
-        initExp
-        body
+      AShape checkecAccType <- typeWithExpection accType env initExp
+      if AShape checkecAccType == dataTypeR then return () else fail "Accumulator type and init expression are not of the same type"
+      outElemType <- bufferType1 outType
+      AShape checkedOutType <-
+        typeWithExpectionAndJustArgs
+          (AShape <$> outElemType)
+          ( [(indexArg, Just $ AShape GaiwanInt), (accArg, Just $ AShape checkecAccType), (dataArg, dataType)] ++ map (second Just) env
+          )
+          body
+      varName <- fresh
+      return $
+        TReducer
+          (GTransformType M.empty [GaiwanBuf (GaiwanBufSize varName 1 0) checkecAccType] [GaiwanBuf (GaiwanBufSize varName 0 1) checkedOutType])
+          name
+          (map fst args)
+          initExp
+          body
 toTypedSmtEnv env Reducer {} = fail "Incorrect argument given to Reducer"
 
 -- | Paste a list of Statement Types onto each other
@@ -322,9 +322,9 @@ mergeTTaged _ _ = fail "cannot merge with constraint on the right"
 joinT :: (Tagable a, Show a, Freshable a) => GTransformType (Tag a) -> GTransformType (Tag a) -> TypeingOut (GTransformType (Tag a))
 joinT (GTransformType c1 from1 to1) (GTransformType c2 from2 to2)
   | null c2 && length to1 == length from2 =
-    joinT1
-      RecordType {toAdjustC = c1, toAdjustB = from1, toMatch = to1}
-      RecordType {toAdjustC = c2, toAdjustB = to2, toMatch = from2}
+      joinT1
+        RecordType {toAdjustC = c1, toAdjustB = from1, toMatch = to1}
+        RecordType {toAdjustC = c2, toAdjustB = to2, toMatch = from2}
 joinT GTransformType {} GTransformType {} = fail "incompatible number of args"
 
 data RecordType a = RecordType
@@ -399,24 +399,24 @@ solveTCnt
   (name2, a2, b2) -- overlapping sizes, these 2 should be unified
   (name3, a3, b3) -- -/
     | name2 == name3 && a2 == a3 && b2 == b3 =
-      return (return) -- basically id
+        return (return) -- basically id
 solveTCnt
   (name2, a2, b2) -- overlapping sizes, these 2 should be unified TODO improve docs FIXME CHECK THIS !!!!
   (name3, a3, b3) -- -/
     | b2 == b3 && (a2 == 0 || a3 == 0) =
-      -- we know that the linear factor must be zero (0*x + b = a₃*x + b ⇒ a₃ = 0)
-      do
-        uniqv <- fresh
-        let zeroTransformer = \(name1, a1, b1) ->
-              if name1 == name2 || a1 == 0
-                then return ((4, uniqv), 0, b1)
-                else return (name1, a1, b1) -- leave unchanged
-        return zeroTransformer
+        -- we know that the linear factor must be zero (0*x + b = a₃*x + b ⇒ a₃ = 0)
+        do
+          uniqv <- fresh
+          let zeroTransformer = \(name1, a1, b1) ->
+                if name1 == name2 || a1 == 0
+                  then return ((4, uniqv), 0, b1)
+                  else return (name1, a1, b1) -- leave unchanged
+          return zeroTransformer
 solveTCnt
   (name2, a2, b2) -- overlapping sizes, these 2 should be unified TODO improve docs
   (name3, a3, b3) -- -/
     | name2 == name3 =
-      fail $ "oh no " ++ show ((name2, a2, b2), (name3, a3, b3))
+        fail $ "oh no " ++ show ((name2, a2, b2), (name3, a3, b3))
 solveTCnt
   (name2, a2, b2) -- RHS is constant
   (name3, 0, b3) = fail $ show ((name2, a2, b2), (name3, 0, b3))
@@ -441,16 +441,16 @@ solveTCnt
             case () of
               _
                 | otherName == name2 ->
-                  ( --trace (show assertName ++ "Unified with left " ++ show (otherName, a1, b1) ++ " with " ++ show (name2, a2, b2) ++ " to " ++ show ((3, uniqv), a1 * u, b1 + a1 * v)) $
-                    return ((3, uniqv), a1 * u, b1 + a1 * v)
-                  )
+                    ( -- trace (show assertName ++ "Unified with left " ++ show (otherName, a1, b1) ++ " with " ++ show (name2, a2, b2) ++ " to " ++ show ((3, uniqv), a1 * u, b1 + a1 * v)) $
+                      return ((3, uniqv), a1 * u, b1 + a1 * v)
+                    )
                 | otherName == name3 ->
-                  ( --trace ( show assertName ++ "Unified with right " ++ show (otherName, a1, b1) ++ " with " ++ show (name3, a3, b3) ++ " to " ++ show ((3, uniqv), a1 * div (a2 * u) a3, b1 + a1 * div (a2 * v + b2 - b3) a3)) $
-                    return ((3, uniqv), a1 * div (a2 * u) a3, b1 + a1 * div (a2 * v + b2 - b3) a3)
-                  )
+                    ( -- trace ( show assertName ++ "Unified with right " ++ show (otherName, a1, b1) ++ " with " ++ show (name3, a3, b3) ++ " to " ++ show ((3, uniqv), a1 * div (a2 * u) a3, b1 + a1 * div (a2 * v + b2 - b3) a3)) $
+                      return ((3, uniqv), a1 * div (a2 * u) a3, b1 + a1 * div (a2 * v + b2 - b3) a3)
+                    )
                 | otherwise ->
-                  --trace (show assertName ++ "Unified with nothing " ++ show (otherName, a1, b1) ++ " remains") $
-                  return (otherName, a1, b1)
+                    -- trace (show assertName ++ "Unified with nothing " ++ show (otherName, a1, b1) ++ " remains") $
+                    return (otherName, a1, b1)
         )
     where
       u = abs $ div a3 (gcd a2 a3)

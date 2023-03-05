@@ -185,7 +185,7 @@ mkOpenRunner convertor programSource extraDefines = do
             waitlist = [],
             convertor = convertor
           }
-  --putStrLn programSource
+  -- putStrLn programSource
 
   return $ OpenCLRunner (runAction initialData) Nothing
 
@@ -208,7 +208,7 @@ getGpuBuffer d buffer = fromMaybe (error "could not find buffer") $ lookup buffe
 
 -- | Run a single action, meant to be run from
 runAction :: RunCLData a -> OpenCLAction -> IO (OpenCLRunner a)
---runAction _ a | trace (show a) False = undefined
+-- runAction _ a | trace (show a) False = undefined
 runAction d (MakeKernel name args range) = do
   kernel <- clCreateKernel (program d) name
   zipWithM_ (\i n -> clSetKernelArgSto kernel i $ getGpuBuffer d n) [0 ..] args

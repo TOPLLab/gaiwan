@@ -2,7 +2,7 @@
 
 module RenderSpec (spec) where
 
---import CodeGen.Render
+-- import CodeGen.Render
 import qualified Data.ByteString.Lazy as BS
 import Language.Gaiwan
 import Language.GaiwanDefs

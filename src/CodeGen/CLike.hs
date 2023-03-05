@@ -14,7 +14,7 @@ mkBinOp a b op = do
   return $ ka ++ op ++ kb
 
 mkCode :: BExp -> SCode String (String, String)
---mkCode e | trace ("\nKKKKKKKKKKKKKKKKK: " ++ (take 10000 $ show e)) False = undefined
+-- mkCode e | trace ("\nKKKKKKKKKKKKKKKKK: " ++ (take 10000 $ show e)) False = undefined
 mkCode e = do
   (code, CAdmin _ _ bounds) <- runStateT (mkCCode e) (CAdmin 0 [] [])
   let letBindCode = map f bounds
@@ -28,7 +28,7 @@ data CAdmin = CAdmin Int [(String, Int)] [(Int, String)]
 type CSCode = StateT CAdmin (SCode String)
 
 mkCCode :: BExp -> CSCode String
---mkCCode e | trace ("mkCCode: " ++ (take 100 $ show e)) False = undefined
+-- mkCCode e | trace ("mkCCode: " ++ (take 100 $ show e)) False = undefined
 mkCCode (Let name value exp) = do
   valueStr <- mkCCode value
   CAdmin letCnt mapping doneMapping <- get
@@ -71,14 +71,57 @@ kernelTemplate name buffers buffersout code =
     " int int_i = get_global_id(0);\n"
       ++ intercalate "\n" (zipWith (gpuBufferAssign "int_i") buffersout code)
 
+-- Reducer in a dumb way all on one core...
+reducerKernelTemplate :: KernelName -> [ReservedBuffer] -> ReservedBuffer -> (String, String) -> String
+reducerKernelTemplate name [buffer@(ReservedBuffer _ gb@(GaiwanBuf _ GaiwanInt))] bufferout code =
+  mkKernelShell name [buffer, bufferout] $
+    "if(0==get_global_id(0)){\n"
+      ++ " int int_acc = 0;\n" -- TODO use actual init acc
+      ++ "for(int int_i = 0 ;int_i < "
+      ++ (lenDefineName gb)
+      ++ ";int_i++){\n"
+      ++ fst code
+      ++ "int_acc = "
+      ++ snd code
+      ++ ";\n" -- update accumulator
+      ++ "}\n"
+      ++ ((gpuBufferAssign "0") bufferout ("", "int_acc")) -- write to pos 0
+      ++ "\n}\n"
+reducerKernelTemplate _ _ _ _ = error "Illegal nubmer of buffers"
+
+-- TODO change to phase 2: take every two items upto len (<- extra argument) and combine, write to lowest of 2 index
+-- Repeat for only even positions (extra arg: 1, 2, 4, 8, 16, ...)
+-- TODO: Make this actually do what was asked instead of sum
+-- TODO check right lenght?
+kernelSum :: KernelName -> [ReservedBuffer] -> [ReservedBuffer] -> String
+kernelSum (KernelName name) [inbuf@(ReservedBuffer _ buffer@(GaiwanBuf _ GaiwanInt))] [buffersout] =
+  "void kernel "
+    ++ name
+    ++ "(int stepsize, "
+    ++ gpuBufferDecl inbuf
+    ++ "){"
+    ++ " int int_i = (2*get_global_id(0))*stepsize;\n"
+    ++ "if(int_i + stepsize < "
+    ++ (lenDefineName buffer)
+    ++ "){"
+    ++ (gpuBufferArgName buffersout)
+    ++ "[int_i] = "
+    ++ (gpuBufferArgName buffersout)
+    ++ "[int_i]+"
+    ++ (gpuBufferArgName buffersout)
+    ++ "[int_i+stepsize];"
+    ++ "}}"
+
 mkKernelShell :: KernelName -> [ReservedBuffer] -> String -> String
 mkKernelShell (KernelName name) args code = "void kernel " ++ name ++ "(" ++ argsStr ++ ")" ++ "{ \n" ++ code ++ " \n};"
   where
     argsStr = intercalate ", " (map gpuBufferDecl args)
 
 -- TODO: size is wrong here, but we do not know it yet, maybe use defines?
-gpuBufferDecl gpub@(ReservedBuffer _ (GaiwanBuf (GaiwanBufSize id a b) GaiwanInt)) =
-  "global int " ++ gpuBufferArgName gpub ++ "[LEN_" ++ show id ++ "_" ++ show a ++ "_" ++ show b ++ "]"
+gpuBufferDecl gpub@(ReservedBuffer _ buffer@(GaiwanBuf (GaiwanBufSize id a b) GaiwanInt)) =
+  "global int " ++ gpuBufferArgName gpub ++ "[" ++ (lenDefineName buffer) ++ "]"
+
+lenDefineName (GaiwanBuf (GaiwanBufSize id a b) GaiwanInt) = "LEN_" ++ show id ++ "_" ++ show a ++ "_" ++ show b
 
 gpuBufferVar (ReservedBuffer (GPUBufferName name) _) = Var ("array" ++ show name) True
 

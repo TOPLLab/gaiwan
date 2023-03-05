@@ -334,7 +334,7 @@ doGoodLifts lifts e = do
           return (x, "lifted" ++ (show i))
       )
       $ goodlifts
-  --TODO limit mapExp
+  -- TODO limit mapExp
   let newVal = foldr (\(cExp, name) exp -> Let name cExp exp) (mapExp (substCommon (M.fromList $ common)) e) common
   return newVal
   where

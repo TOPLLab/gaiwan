@@ -20,7 +20,7 @@ import Debug.Trace
 import Language.GaiwanDefs
 import Language.GaiwanTypes
 
-data PipelineStep = PipelineStep [(GaiwanBuf Int, BExp)]
+data PipelineStep = PipelineStep [(GaiwanBuf Int, BExp)] -- [(buffer to write data to, what to write to it)]
   deriving (Show)
 
 type TmpCode a = SCode String a

@@ -14,15 +14,15 @@ module Code
     lookupDef,
     registerDef,
     freshGPUBuffer,
-    --deserialize,
-    --serialize,
+    -- deserialize,
+    -- serialize,
   )
 where
 
 import Code.Definitions as C
 import Code.Flatten
 import Code.SCode
---import Code.Serialize
+-- import Code.Serialize
 import Control.Monad
 import Data.Bifunctor
 import qualified Data.ByteString.Lazy as BS
@@ -39,8 +39,8 @@ compile c = (deviceCode c, bufAlloc ++ prog)
     prog = flattenBuffers $ hostCode c
     bufAlloc = C.AllocBuffer <$> toList (collectBuffers prog)
     collectBuffers ((CallKernel _ inBufs outBufs) : r) = S.union (collectBuffers r) $ fromList outBufs
-    --collectBuffers ((ReadBuffer s rb) : r) = S.union (collectBuffers r) $ fromList [rb]
-    --collectBuffers ((OutputBuffer rbs) : r) = S.union (collectBuffers r) $ fromList rbs
+    -- collectBuffers ((ReadBuffer s rb) : r) = S.union (collectBuffers r) $ fromList [rb]
+    -- collectBuffers ((OutputBuffer rbs) : r) = S.union (collectBuffers r) $ fromList rbs
     collectBuffers (_ : r) = collectBuffers r
     collectBuffers [] = empty
 

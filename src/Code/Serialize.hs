@@ -47,7 +47,8 @@ instance FromJSON GPUAction where
   parseJSON (Object v) =
     (ReadBuffer <$> (v .: "src") <*> v .: "read")
       <|> ( CallKernel
-              <$> v .: "call"
+              <$> v
+              .: "call"
               <*> ((v .: "buffers") >>= (.: "used"))
               <*> ((v .: "buffers") >>= (.: "out"))
               <*> (v .: "threads")

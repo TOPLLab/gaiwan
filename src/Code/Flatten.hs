@@ -70,7 +70,7 @@ flattenBuffers actions = assignBuffers actionsAndNeed
                         )
                       )
 
-    -- Apply a mappign of GPUBuffers to a GPU action
+    -- Apply a mapping of GPUBuffers to a GPU action
     -- Assumes that all mentioned GPU buffers are assigned in the mapping
     translate :: [(ReservedBuffer, ReservedBuffer)] -> GPUAction -> GPUAction
     translate m r@(ReadBuffer {}) = r

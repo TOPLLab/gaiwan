@@ -45,7 +45,8 @@ data PicElement = PicElement
 instance Show PicElement where
   show PicElement {src = [], value = v} = show v
   show PicElement {src = s, value = v} =
-    show v ++ "^"
+    show v
+      ++ "^"
       ++ show
         ( map (\(PicBufferId d, _) -> d) s
         )

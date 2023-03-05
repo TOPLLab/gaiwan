@@ -47,7 +47,8 @@ main = do
         ( map
             ( \(!(code, actions), !s) ->
                 ( bench ("test " ++ show s) $
-                    nfIO $ convertPrepared code actions
+                    nfIO $
+                      convertPrepared code actions
                 )
             )
             benchIn
