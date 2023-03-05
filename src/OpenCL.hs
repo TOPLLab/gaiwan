@@ -121,7 +121,11 @@ convertS _ _ (Defs.CallKernel (KernelName n) rbs [outBuf]) = do
   bufs <- mapM findBuf rbs
   bufo <- findBuf outBuf
   return $ [MakeKernel n (bufs ++ [bufo]) (case bufo of (CLGPUBuffer _ s) -> Range s 0 0)]
-convertS _ _ (Defs.CallKernel kn rbs _) = fail "More than one outputBuf"
+convertS _ _ (Defs.CallKernel kn rbs _) = fail "More than one outputBuf for CallKernel"
+convertS _ _ (Defs.CallReducerKernel (KernelName n) rbs outBuf) = do
+  bufs <- mapM findBuf rbs
+  bufo <- findBuf outBuf
+  return $ [MakeKernel n (bufs ++ [bufo]) (Range 1 0 0)] -- only one thread :(
 convertS lt vt (Defs.ReadBuffer str rb@(Defs.ReservedBuffer gbn gb)) = do
   m <- get
   case (M.lookup rb m) of
