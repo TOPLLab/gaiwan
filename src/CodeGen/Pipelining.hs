@@ -48,6 +48,15 @@ toKernel (PipelineStep results) = do
   addHostCode $ CallKernel fName argBufs outBuf
   return outBuf
 
+toReduceKernel :: GaiwanBuf Int -> Exp -> BExp -> TmpCode ReservedBuffer
+toReduceKernel toT init_value exp = do
+  let argBufs = Set.toList $ getBuffers [exp] -- only one
+  outBuf <- freshGPUBuffer toT -- lenght 1
+  fName <- addDeviceReducerKernel mkCode reducerKernelTemplate exp argBufs outBuf
+  addHostCode $ CallReducerKernel fName argBufs outBuf
+  return outBuf
+toReduceKernel _ _ _ = error "incorrect call"
+
 gpuBufferSize :: ReservedBuffer -> GaiwanBufSize Int
 gpuBufferSize (ReservedBuffer _ (GaiwanBuf gbs _)) = gbs
 
@@ -140,20 +149,30 @@ traceThis x a = a
 
 -- TODO check for duplicates argument names in typing
 processApplication :: PlanData -> TypedTransform -> TmpCode PlanData
+-- Shaper applied to quite simple inputs ⇒ Do substitution of A[x] -> f_A(x)
 processApplication (PipelineStep inputs) (TShaper (GTransformType contraints fromT [toT]) name (iname : bufferArgs) exp) | length inputs == length bufferArgs && quiteSimple inputs = do
-  --addHostCode $ Infoz $ "add call to shaper " ++ name ++ "(XXX)"
+  -- addHostCode $ Infoz $ "add call to shaper " ++ name ++ "(XXX)"
   return $ PipelineStep [(toT, foldr f (substByTheI iname (toBExp exp)) (zip bufferArgs inputs))]
   where
     f (argName, (_, buf)) expy = traceThis "substArrrayGet ->" $ substArrayGet argName (g buf) (traceThis "Input to subst =>" expy)
 
     g :: BExp -> BExp -> BExp
     g realArrayBufExp usedIndexInShpr = traceThis "OKKKKKKKKKKKKKKKKKKKK" $ substTheIBy (traceThis "AAAAAAAAA" usedIndexInShpr) (traceThis "BBBBBBBB" realArrayBufExp)
+
+-- Shaper applied to more complex imput ⇒  Make kernel call to materialize the results
 processApplication complex@(PipelineStep inputs) task@(TShaper (GTransformType contraints fromT [toT]) name (iname : bufferArgs) exp) | length inputs == length bufferArgs = do
   resBuffers <- toKernel complex
   processApplication (PipelineStep (map readToAccess resBuffers)) task
-processApplication (PipelineStep [(_, input)]) (TMapper (GTransformType contraints [fromT] [toT]) name [iname, dname] exp) = do
+
+-- Mapper applied to data => Do substitution
+processApplication (PipelineStep [(_, input)]) (TMapper (GTransformType _ [fromT] [toT]) name [iname, dname] exp) = do
   -- addHostCode $ Infoz $ "add call to  " ++ name ++ "()"
   return $ PipelineStep [(toT, simpleSubstMult [((iname, False), theI), ((dname, False), input)] (toBExp exp))]
+
+-- Reducer applied to data => Call reducing kernel
+processApplication complex@(PipelineStep [(_, input)]) (TReducer (GTransformType _ [fromT] [toT]) name [var_i, var_acc, var_value] init exp) = do
+  resBuffer <- toReduceKernel toT init $ simpleSubstMult [((var_i, False), theI), ((var_acc, False), Var "acc" True), ((var_value, False), input)] $ toBExp exp
+  return $ PipelineStep [readToAccess resBuffer]
 processApplication _ a = error $ show a -- TODO: handle reducer
 
 quiteSimple :: [(GaiwanBuf Int, BExp)] -> Bool
@@ -166,10 +185,10 @@ quiteSimple s
         )
         s
     ) =
-    True
+      True
 quiteSimple input = (sum $ (map (complexity . snd) input)) < 40
 
---processApplication pd (TAbstraction t _ [] body) =
+-- processApplication pd (TAbstraction t _ [] body) =
 --  foldM processApplicationD pd body
 
 processApplicationD a b = do

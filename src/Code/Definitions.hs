@@ -60,6 +60,7 @@ instance Ord ReservedBuffer where
 
 data GPUAction
   = CallKernel KernelName [ReservedBuffer] [ReservedBuffer] -- name args resultloc
+  | CallReducerKernel KernelName [ReservedBuffer] ReservedBuffer -- one output buffer
   | ReadBuffer String ReservedBuffer -- Write the contents of a named buffer into a GPU buffer
   | AllocBuffer ReservedBuffer
   | OutputBuffer [ReservedBuffer] -- Extract a list of buffers from the device to the host

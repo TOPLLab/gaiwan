@@ -7,6 +7,7 @@ module Code
     ReservedBuffer (..),
     addDeviceCode,
     addDeviceKernel,
+    addDeviceReducerKernel,
     addHostReadBuffer,
     compile,
     addHostCode,
@@ -61,4 +62,20 @@ addDeviceKernel mkCode mkKernelShell exps buffers buffersout = do
   code <- mapM mkCode exps
   addDeviceCode $ mkKernelShell name buffers buffersout code
   registerKernel exps buffers buffersout name -- remember for next time
+  return name
+
+addDeviceReducerKernel ::
+  Monoid a =>
+  ( (BExp -> SCode a b) ->
+    (KernelName -> [ReservedBuffer] -> ReservedBuffer -> b -> a) ->
+    BExp ->
+    [ReservedBuffer] ->
+    ReservedBuffer ->
+    SCode a KernelName
+  )
+addDeviceReducerKernel mkCode mkKernelShell exp buffers bufferout = do
+  name <- freshKernelName
+  code <- mkCode exp
+  addDeviceCode $ mkKernelShell name buffers bufferout code
+  registerKernel [exp] buffers [bufferout] name -- remember for next time TODO remove?
   return name

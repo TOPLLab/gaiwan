@@ -22,7 +22,7 @@ where
 import Code.Definitions
 import Data.List as L hiding (delete, insert, union)
 import Data.Maybe
-import Data.Set as S (Set (..), delete, difference, empty, filter, foldr, fromList, insert, lookupMin, member, toList, union)
+import Data.Set as S (Set (..), delete, difference, empty, filter, foldr, fromList, insert, lookupMin, member, singleton, toList, union)
 import Debug.Trace
 
 flattenBuffers :: [GPUAction] -> [GPUAction]
@@ -47,6 +47,9 @@ flattenBuffers actions = assignBuffers actionsAndNeed
     foldrWithNeed action@(CallKernel name usedBuffers writtenBuffers) (acc, need) =
       let neededBufs = union need $ fromList usedBuffers
        in ((action, need) : acc, difference neededBufs (fromList writtenBuffers))
+    foldrWithNeed action@(CallReducerKernel name usedBuffers writtenBuffer) (acc, need) =
+      let neededBufs = union need $ fromList usedBuffers
+       in ((action, need) : acc, difference neededBufs (singleton writtenBuffer))
     foldrWithNeed action (acc, need) = ((action, need) : acc, need)
     assignBuffers :: [(GPUAction, Set ReservedBuffer)] -> [GPUAction]
     assignBuffers x = reverse $ fst $ L.foldl' assignBufFold ([], (S.empty, [])) x
@@ -74,11 +77,16 @@ flattenBuffers actions = assignBuffers actionsAndNeed
     -- Assumes that all mentioned GPU buffers are assigned in the mapping
     translate :: [(ReservedBuffer, ReservedBuffer)] -> GPUAction -> GPUAction
     translate m r@(ReadBuffer {}) = r
-    translate m (CallKernel name usedBuffers writtenBuffer) =
+    translate m (CallReducerKernel name usedBuffers writtenBuffer) =
+      CallReducerKernel
+        name
+        (map (justLookup m) usedBuffers)
+        (justLookup m writtenBuffer)
+    translate m (CallKernel name usedBuffers writtenBuffers) =
       CallKernel
         name
         (map (justLookup m) usedBuffers)
-        (map (justLookup m) writtenBuffer)
+        (map (justLookup m) writtenBuffers)
     translate m (AllocBuffer {}) = error "Flatten should not be used if there are already allocated buffers!"
     translate m (OutputBuffer buffers) = OutputBuffer (map (justLookup m) buffers)
     translate m x@(Infoz {}) = x
