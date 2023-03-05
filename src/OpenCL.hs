@@ -85,14 +85,14 @@ convertPlan p = do
         (Right (actions, assignedBuffers)) ->
           Right $
             ( concat $ actions ++ [freeUsedBuffers assignedBuffers] ++ [[Release]],
-              map defiveLENDefines $ M.toList assignedBuffers
+              map defineLENDefines $ M.toList assignedBuffers
             )
 
 freeUsedBuffers :: M.Map Defs.ReservedBuffer CLGPUBuffer -> [OpenCLAction]
 freeUsedBuffers m = map (FreeBuffer) $ nub $ M.elems m
 
-defiveLENDefines :: (Defs.ReservedBuffer, CLGPUBuffer) -> (String, Int)
-defiveLENDefines
+defineLENDefines :: (Defs.ReservedBuffer, CLGPUBuffer) -> (String, Int)
+defineLENDefines
   ( (Defs.ReservedBuffer gbn (GaiwanBuf (GaiwanBufSize n i j) gs)),
     (CLGPUBuffer _ size)
     ) =
@@ -158,7 +158,9 @@ findBuf k = do
 mkOpenRunner :: (Int -> Ptr CInt -> IO a) -> String -> [(String, Int)] -> IO (OpenCLRunner a)
 mkOpenRunner convertor programSource extraDefines = do
   -- Initialize OpenCL
+  putStrLn "GOOOOOOO"
   (platform : _) <- clGetPlatformIDs
+  putStrLn $ show $ platform
   (dev : _) <- clGetDeviceIDs platform CL_DEVICE_TYPE_ALL
   context <- clCreateContext [] [dev] print
   q <- clCreateCommandQueue context dev [CL_QUEUE_PROFILING_ENABLE]
