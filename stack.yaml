@@ -69,5 +69,5 @@ extra-deps:
 #
 nix:
   enable: true
-  packages: [glpk, pcre, opencl-info, ocl-icd]
+  packages: [glpk, pcre, opencl-info, ocl-icd, libffi]
 
