@@ -1,6 +1,6 @@
 {-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE TupleSections #-}
+
+
 
 module CodeGen.Pipelining (prepare, makePlan) where
 
@@ -30,20 +30,20 @@ prepare p = compile $ execCode $ makePlanning p
 
 -- helper function for only testing the plan
 makePlan :: TypedProgram -> [GPUAction]
-makePlan p = (\x -> (Infoz (fst x) : (snd x))) $ prepare p
+makePlan p = (\x -> Infoz (fst x) : snd x) $ prepare p
 
 makePlanning :: TypedProgram -> TmpCode ()
 makePlanning (TypedProg (GTransformType contraints fromT toT) actions) =
   do
     da <- foldlM processActions emptyPlan actions
     resultBuffers <- toKernel da
-    addHostCode $ (OutputBuffer resultBuffers)
+    addHostCode (OutputBuffer resultBuffers)
     return ()
 
 toKernel :: PlanData -> TmpCode [ReservedBuffer]
 toKernel (PipelineStep results) = do
   let argBufs = Set.toList $ getBuffers (map snd results)
-  outBuf <- mapM freshGPUBuffer (map fst results)
+  outBuf <- mapM (freshGPUBuffer . fst) results
   fName <- addDeviceKernel mkCode kernelTemplate (map snd results) argBufs outBuf
   addHostCode $ CallKernel fName argBufs outBuf
   return outBuf
@@ -102,10 +102,10 @@ emptyPlan = PipelineStep []
 -- TODO check arg length at typechecking
 
 readToAccess :: ReservedBuffer -> (GaiwanBuf Int, BExp)
-readToAccess a@(ReservedBuffer gbn gb) = (gb, (GPUBufferGet a theI))
+readToAccess a@(ReservedBuffer gbn gb) = (gb, GPUBufferGet a theI)
 
 processActions :: PlanData -> TypedInstr -> TmpCode PlanData
-processActions pd@(PipelineStep b) (TReturn (GTransformType contrainst fT tT) buffers) | length b == 0 = do
+processActions pd@(PipelineStep b) (TReturn (GTransformType contrainst fT tT) buffers) | null b = do
   let nameBuffer = zip buffers tT
   readBuffers <- mapM (uncurry addHostReadBuffer) nameBuffer
   return $ PipelineStep (map readToAccess readBuffers)
@@ -143,15 +143,14 @@ substByTheI x = simpleSubst (x, False) theI
 substTheIBy a b = simplifyExp $ subst ("i", True) a b
 
 toBExp :: Exp -> BExp
-toBExp e = mapExp (const Nothing) e
+toBExp = mapExp (const Nothing)
 
 traceThis x a = a
 
 -- TODO check for duplicates argument names in typing
 processApplication :: PlanData -> TypedTransform -> TmpCode PlanData
 -- Shaper applied to quite simple inputs ⇒ Do substitution of A[x] -> f_A(x)
-processApplication (PipelineStep inputs) (TShaper (GTransformType contraints fromT [toT]) name (iname : bufferArgs) exp) | length inputs == length bufferArgs && quiteSimple inputs = do
-  -- addHostCode $ Infoz $ "add call to shaper " ++ name ++ "(XXX)"
+processApplication (PipelineStep inputs) (TShaper (GTransformType contraints fromT [toT]) name (iname : bufferArgs) exp) | length inputs == length bufferArgs && quiteSimple inputs =
   return $ PipelineStep [(toT, foldr f (substByTheI iname (toBExp exp)) (zip bufferArgs inputs))]
   where
     f (argName, (_, buf)) expy = traceThis "substArrrayGet ->" $ substArrayGet argName (g buf) (traceThis "Input to subst =>" expy)
@@ -165,8 +164,7 @@ processApplication complex@(PipelineStep inputs) task@(TShaper (GTransformType c
   processApplication (PipelineStep (map readToAccess resBuffers)) task
 
 -- Mapper applied to data => Do substitution
-processApplication (PipelineStep [(_, input)]) (TMapper (GTransformType _ [fromT] [toT]) name [iname, dname] exp) = do
-  -- addHostCode $ Infoz $ "add call to  " ++ name ++ "()"
+processApplication (PipelineStep [(_, input)]) (TMapper (GTransformType _ [fromT] [toT]) name [iname, dname] exp) =
   return $ PipelineStep [(toT, simpleSubstMult [((iname, False), theI), ((dname, False), input)] (toBExp exp))]
 
 -- Reducer applied to data => Call reducing kernel
@@ -177,16 +175,15 @@ processApplication _ a = error $ show a -- TODO: handle reducer
 
 quiteSimple :: [(GaiwanBuf Int, BExp)] -> Bool
 quiteSimple s
-  | ( all
+  | all
         ( \(GaiwanBuf _ t, _) -> case t of
             GaiwanInt -> False
             (GaiwanTuple gss) -> True
             (TVar any) -> error "Cannot handle this yet..."
         )
-        s
-    ) =
+        s =
       True
-quiteSimple input = (sum $ (map (complexity . snd) input)) < 40
+quiteSimple input = sum (map (complexity . snd) input) < 40
 
 -- processApplication pd (TAbstraction t _ [] body) =
 --  foldM processApplicationD pd body

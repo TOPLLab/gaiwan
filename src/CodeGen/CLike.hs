@@ -18,10 +18,10 @@ mkCode :: BExp -> SCode String (String, String)
 mkCode e = do
   (code, CAdmin _ _ bounds) <- runStateT (mkCCode e) (CAdmin 0 [] [])
   let letBindCode = map f bounds
-  return ((intercalate "\n" letBindCode), code)
+  return (intercalate "\n" letBindCode, code)
 
 f :: (Int, String) -> String
-f (id, impl) = "int let_" ++ (show id) ++ "= " ++ impl ++ ";"
+f (id, impl) = "int let_" ++ show id ++ "= " ++ impl ++ ";"
 
 data CAdmin = CAdmin Int [(String, Int)] [(Int, String)]
 
@@ -63,7 +63,7 @@ mkCCode (ArrayGet x idx) = do
   kidx <- mkCodeB idx
   return $ kx ++ "[" ++ kidx ++ "]"
 mkCCode (GPUBufferGet buffer idx) = mkCCode (ArrayGet (gpuBufferVar buffer) idx)
-mkCCode unknownCode = error $ "Could not convert code:" ++ (take 30 $ show unknownCode) ++ "..."
+mkCCode unknownCode = error $ "Could not convert code:" ++ take 30 (show unknownCode) ++ "..."
 
 kernelTemplate :: KernelName -> [ReservedBuffer] -> [ReservedBuffer] -> [(String, String)] -> String
 kernelTemplate name buffers buffersout code =
@@ -78,14 +78,14 @@ reducerKernelTemplate name [buffer@(ReservedBuffer _ gb@(GaiwanBuf _ GaiwanInt))
     "if(0==get_global_id(0)){\n"
       ++ " int int_acc = 0;\n" -- TODO use actual init acc
       ++ "for(int int_i = 0 ;int_i < "
-      ++ (lenDefineName gb)
+      ++ lenDefineName gb
       ++ ";int_i++){\n"
       ++ fst code
       ++ "int_acc = "
       ++ snd code
       ++ ";\n" -- update accumulator
       ++ "}\n"
-      ++ ((gpuBufferAssign "0") bufferout ("", "int_acc")) -- write to pos 0
+      ++ (gpuBufferAssign "0") bufferout ("", "int_acc") -- write to pos 0
       ++ "\n}\n"
 reducerKernelTemplate _ _ _ _ = error "Illegal nubmer of buffers"
 
@@ -102,13 +102,13 @@ kernelSum (KernelName name) [inbuf@(ReservedBuffer _ buffer@(GaiwanBuf _ GaiwanI
     ++ "){"
     ++ " int int_i = (2*get_global_id(0))*stepsize;\n"
     ++ "if(int_i + stepsize < "
-    ++ (lenDefineName buffer)
+    ++ lenDefineName buffer
     ++ "){"
-    ++ (gpuBufferArgName buffersout)
+    ++ gpuBufferArgName buffersout
     ++ "[int_i] = "
-    ++ (gpuBufferArgName buffersout)
+    ++ gpuBufferArgName buffersout
     ++ "[int_i]+"
-    ++ (gpuBufferArgName buffersout)
+    ++ gpuBufferArgName buffersout
     ++ "[int_i+stepsize];"
     ++ "}}"
 
@@ -118,15 +118,15 @@ mkKernelShell (KernelName name) args code = "void kernel " ++ name ++ "(" ++ arg
     argsStr = intercalate ", " (map gpuBufferDecl args)
 
 -- TODO: size is wrong here, but we do not know it yet, maybe use defines?
-gpuBufferDecl gpub@(ReservedBuffer _ buffer@(GaiwanBuf (GaiwanBufSize id a b) GaiwanInt)) =
-  "global int " ++ gpuBufferArgName gpub ++ "[" ++ (lenDefineName buffer) ++ "]"
+gpuBufferDecl gpub@(ReservedBuffer _ buffer@(GaiwanBuf (GaiwanBufSize id a b) _)) =
+  "global int " ++ gpuBufferArgName gpub ++ "[" ++ lenDefineName buffer ++ "]"
 
-lenDefineName (GaiwanBuf (GaiwanBufSize id a b) GaiwanInt) = "LEN_" ++ show id ++ "_" ++ show a ++ "_" ++ show b
+lenDefineName (GaiwanBuf (GaiwanBufSize id a b) _) = "LEN_" ++ show id ++ "_" ++ show a ++ "_" ++ show b
 
 gpuBufferVar (ReservedBuffer (GPUBufferName name) _) = Var ("array" ++ show name) True
 
 -- todo
-gpuBufferArgName b@(ReservedBuffer (GPUBufferName name) _) = "int_array" ++ (show name)
+gpuBufferArgName b@(ReservedBuffer (GPUBufferName name) _) = "int_array" ++ show name
 
 gpuBufferAssign :: String -> ReservedBuffer -> (String, String) -> String
 gpuBufferAssign index buffer (letBinds, value) = "{" ++ letBinds ++ "\n" ++ gpuBufferArgName buffer ++ "[" ++ index ++ "] = " ++ value ++ ";}"
