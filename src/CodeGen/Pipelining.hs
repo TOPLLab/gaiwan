@@ -60,14 +60,14 @@ toAssocReduceKernel :: GaiwanBuf Int -> GaiwanBuf Int -> Exp -> BExp -> BExp -> 
 toAssocReduceKernel (GaiwanBuf inSize _) (GaiwanBuf outSize outType) init_value exp1 exp2 =
     do
   let argBufs = Set.toList $ getBuffers [exp1] -- only one input bufffer
-  outBuf <- freshGPUBuffer $ GaiwanBuf (halfBufSize inSize) outType
+  outBuf <- freshGPUBuffer $ GaiwanBuf (oneElBufSize inSize) outType
   (fName1, fName2) <- addDeviceAssocReducerKernel mkCode assocReducerKernelTemplate exp1 exp2 argBufs outBuf
   addHostCode $ CallAssocReducerKernel fName1 fName2 argBufs outBuf
   return outBuf
 toAssocReduceKernel _ _ _ _ _ = error "incorrect call"
 
-halfBufSize :: GaiwanBufSize Int -> GaiwanBufSize Int
-halfBufSize (GaiwanBufSize n i j) = GaiwanBufSize n i j
+oneElBufSize :: GaiwanBufSize Int -> GaiwanBufSize Int
+oneElBufSize (GaiwanBufSize n i j) = GaiwanBufSize n 0 1
 
 gpuBufferSize :: ReservedBuffer -> GaiwanBufSize Int
 gpuBufferSize (ReservedBuffer _ (GaiwanBuf gbs _)) = gbs

@@ -6,7 +6,7 @@ import Data.Map (empty, fromList)
 import Language.Gaiwan
 import Language.GaiwanDefs
 import Language.GaiwanTypes
-import OpenCL (CLGPUBuffer (CLGPUBuffer), OpenCLAction (AllocBuffer, ExtractBuffer, FreeBuffer, MakeKernel, ReadBuffer, Release), Range (Range), convertPlan)
+import OpenCL (CLGPUBuffer (CLGPUBuffer), OpenCLAction (..), Range (Range), convertPlan)
 import Test.Hspec
 import Test.QuickCheck
 
@@ -73,9 +73,7 @@ spec =
         `shouldBe` ( [ AllocBuffer (CLGPUBuffer 1 1),
                        AllocBuffer (CLGPUBuffer 2 1),
                        MakeKernel "Read a buffer" [CLGPUBuffer 0 16] (Range 0 0 0),
-                       MakeKernel "kernel0_REDUCER" [CLGPUBuffer 0 16, CLGPUBuffer 1 1] (Range 8 0 0),
-                       MakeKernel "kernel1_REDUCER" [CLGPUBuffer 1 1] (Range 4 0 0),
-                       MakeKernel "kernel1_REDUCER" [CLGPUBuffer 1 1] (Range 2 0 0),
+                       MakeReducerKernel "kernel0_REDUCER" "kernel1_REDUCER" [CLGPUBuffer 0 16] (CLGPUBuffer 1 1) 16,
                        MakeKernel "kernel2" [CLGPUBuffer 1 1, CLGPUBuffer 2 1] (Range 1 0 0),
                        ExtractBuffer (CLGPUBuffer 2 1),
                        FreeBuffer (CLGPUBuffer 0 16),

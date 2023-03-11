@@ -20,6 +20,7 @@ import Data.ByteString (useAsCStringLen)
 import Data.ByteString as BS hiding (concat, filter, intercalate, map, putStrLn)
 import Data.ByteString.Unsafe (unsafeUseAsCStringLen)
 import Data.List
+import qualified Data.List as L
 import qualified Data.Map as M
 import Data.Maybe (fromJust, fromMaybe)
 import Data.Word
@@ -39,7 +40,7 @@ data Range = Range Int Int Int deriving (Show, Eq)
 -- | OpenCL actions that can be performed
 data OpenCLAction
   = MakeKernel String [CLGPUBuffer] Range
-  | MakeReducerKernel String String [CLGPUBuffer] Range
+  | MakeReducerKernel String String [CLGPUBuffer] CLGPUBuffer Int
   | AllocBuffer CLGPUBuffer
   | FreeBuffer CLGPUBuffer
   | Release
@@ -131,17 +132,7 @@ convertS _ _ (Defs.CallAssocReducerKernel (KernelName n1) (KernelName n2) rbs ou
   bufs@[CLGPUBuffer _ insize] <- mapM findBuf rbs
   bufo <- findBuf outBuf
   -- Number of in elements / 2 (rounded up)
-  let firstLvlThreads = insize `div` 2 + insize `rem` 2
-  let nextSteps = deeper bufo firstLvlThreads
-  return $ (MakeKernel n1 (bufs ++ [bufo]) (Range firstLvlThreads 0 0)) : nextSteps
-  where
-    -- deeper steps with kernel n2
-    deeper :: CLGPUBuffer -> Int -> [OpenCLAction]
-    deeper bufo prevSize | prevSize <= 2 = []
-    deeper bufo prevSize =
-      let nextLvlThreads = (prevSize `div` 2 + prevSize `rem` 2)
-       in MakeKernel n2 [bufo] (Range nextLvlThreads 0 0) : deeper bufo nextLvlThreads
-
+  return [MakeReducerKernel n1 n2 bufs bufo insize]
 convertS lt vt (Defs.ReadBuffer str rb@(Defs.ReservedBuffer gbn gb)) = do
   m <- get
   case M.lookup rb m of
@@ -235,6 +226,35 @@ runAction d (MakeKernel name args range) = do
   evt <- clEnqueueNDRangeKernel (queue d) kernel (rangeArr range) [] (waitlist d)
   clReleaseKernel kernel
   returnAction (d {waitlist = [evt]}) Nothing
+runAction d (MakeReducerKernel phase1Kernel phase2Kernel inputBuffers resultBuffer initialSize) = do
+  kernel1 <- clCreateKernel (program d) phase1Kernel
+  let phaseOneSize = halfSize initialSize
+  let elemSize = sizeOf (0 :: CInt)
+      vecSize = elemSize * phaseOneSize
+  interBuffer <- clCreateBuffer (context d) [CL_MEM_READ_WRITE] (vecSize, nullPtr)
+
+  zipWithM_ (\i n -> clSetKernelArgSto kernel1 i $ getGpuBuffer d n) [0 ..] inputBuffers
+  clSetKernelArgSto kernel1 (lengthCLuint inputBuffers) interBuffer
+  evt <- clEnqueueNDRangeKernel (queue d) kernel1 (rangeArr (Range phaseOneSize 0 0)) [] (waitlist d)
+  clReleaseKernel kernel1
+
+  kernel2 <- clCreateKernel (program d) phase2Kernel
+  clSetKernelArgSto kernel1 0 interBuffer
+  clSetKernelArgSto kernel1 1 $ getGpuBuffer d resultBuffer
+  -- TODO check if still writing to outbuf
+  evt2 <- enqueuRec (\s evt -> clEnqueueNDRangeKernel (queue d) kernel2 (rangeArr (Range s 0 0)) [] [evt]) phaseOneSize evt
+  clWaitForEvents [evt2]
+  clReleaseKernel kernel2
+  clReleaseMemObject interBuffer
+  returnAction (d {waitlist = [evt2]}) Nothing
+  where
+    halfSize x = x `div` 2 + x `rem` 2
+    enqueuRec :: (Int -> CLEvent -> IO CLEvent) -> Int -> CLEvent -> IO CLEvent
+    enqueuRec _ prevSize waitEvt | prevSize <= 2 = return waitEvt
+    enqueuRec startKernel prevSize waitEvt = do
+      let newSize = halfSize prevSize
+      nextEvt <- startKernel newSize waitEvt
+      enqueuRec startKernel newSize nextEvt
 runAction d (AllocBuffer gpub@(CLGPUBuffer _ size)) = do
   let elemSize = sizeOf (0 :: CInt)
       vecSize = elemSize * size
@@ -267,6 +287,11 @@ runAction d (ReadBuffer bufdata gpub@(CLGPUBuffer _ size)) = do
   mem_in <- clCreateBuffer (context d) [CL_MEM_READ_ONLY, CL_MEM_COPY_HOST_PTR] (vecSize, castPtr bufdata)
   -- send the read contents to the convertor in d
   returnAction (d {gpuBuffers = (gpub, mem_in) : gpuBuffers d}) Nothing
+
+-- TODO: why is this needed?
+lengthCLuint :: [CLGPUBuffer] -> CLuint
+lengthCLuint [] = 0
+lengthCLuint (_ : xs) = 1 + lengthCLuint xs
 
 -- | Update the runner and return value
 returnAction :: RunCLData a -> Maybe a -> IO (OpenCLRunner a)
