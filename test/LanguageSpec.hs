@@ -632,8 +632,8 @@ spec = do
           `shouldBe` [ AllocBuffer (ReservedBuffer (GPUBufferName 1) (GaiwanBuf (GaiwanBufSize 63 0 1) GaiwanInt)),
                        AllocBuffer (ReservedBuffer (GPUBufferName 2) (GaiwanBuf (GaiwanBufSize 63 0 1) GaiwanInt)),
                        ReadBuffer "a" (ReservedBuffer (GPUBufferName 0) (GaiwanBuf (GaiwanBufSize 63 1 0) GaiwanInt)),
-                       CallReducerKernel (KernelName "kernel0") [ReservedBuffer (GPUBufferName 0) (GaiwanBuf (GaiwanBufSize 63 1 0) GaiwanInt)] (ReservedBuffer (GPUBufferName 1) (GaiwanBuf (GaiwanBufSize 63 0 1) GaiwanInt)),
-                       CallKernel (KernelName "kernel1") [ReservedBuffer (GPUBufferName 1) (GaiwanBuf (GaiwanBufSize 63 0 1) GaiwanInt)] [ReservedBuffer (GPUBufferName 2) (GaiwanBuf (GaiwanBufSize 63 0 1) GaiwanInt)],
+                       CallAssocReducerKernel (KernelName "kernel0") (KernelName "kernel1") [ReservedBuffer (GPUBufferName 0) (GaiwanBuf (GaiwanBufSize 63 1 0) GaiwanInt)] (ReservedBuffer (GPUBufferName 1) (GaiwanBuf (GaiwanBufSize 63 0 1) GaiwanInt)),
+                       CallKernel (KernelName "kernel2") [ReservedBuffer (GPUBufferName 1) (GaiwanBuf (GaiwanBufSize 63 0 1) GaiwanInt)] [ReservedBuffer (GPUBufferName 2) (GaiwanBuf (GaiwanBufSize 63 0 1) GaiwanInt)],
                        OutputBuffer [ReservedBuffer (GPUBufferName 2) (GaiwanBuf (GaiwanBufSize 63 0 1) GaiwanInt)]
                      ]
 
