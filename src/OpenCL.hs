@@ -39,6 +39,7 @@ data Range = Range Int Int Int deriving (Show, Eq)
 -- | OpenCL actions that can be performed
 data OpenCLAction
   = MakeKernel String [CLGPUBuffer] Range
+  | MakeReducerKernel String String [CLGPUBuffer] Range
   | AllocBuffer CLGPUBuffer
   | FreeBuffer CLGPUBuffer
   | Release
@@ -126,6 +127,21 @@ convertS _ _ (Defs.CallReducerKernel (KernelName n) rbs outBuf) = do
   bufs <- mapM findBuf rbs
   bufo <- findBuf outBuf
   return [MakeKernel n (bufs ++ [bufo]) (Range 1 0 0)] -- only one thread :(
+convertS _ _ (Defs.CallAssocReducerKernel (KernelName n1) (KernelName n2) rbs outBuf) = do
+  bufs@[CLGPUBuffer _ insize] <- mapM findBuf rbs
+  bufo <- findBuf outBuf
+  -- Number of in elements / 2 (rounded up)
+  let firstLvlThreads = insize `div` 2 + insize `rem` 2
+  let nextSteps = deeper bufo firstLvlThreads
+  return $ (MakeKernel n1 (bufs ++ [bufo]) (Range firstLvlThreads 0 0)) : nextSteps
+  where
+    -- deeper steps with kernel n2
+    deeper :: CLGPUBuffer -> Int -> [OpenCLAction]
+    deeper bufo prevSize | prevSize <= 2 = []
+    deeper bufo prevSize =
+      let nextLvlThreads = (prevSize `div` 2 + prevSize `rem` 2)
+       in MakeKernel n2 [bufo] (Range nextLvlThreads 0 0) : deeper bufo nextLvlThreads
+
 convertS lt vt (Defs.ReadBuffer str rb@(Defs.ReservedBuffer gbn gb)) = do
   m <- get
   case M.lookup rb m of

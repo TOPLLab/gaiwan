@@ -44,10 +44,13 @@ flattenBuffers actions = assignBuffers actionsAndNeed
     foldrWithNeed action@(OutputBuffer buffers) (acc, need) =
       let neededBufs = union need (fromList buffers)
        in ((action, neededBufs) : acc, neededBufs)
-    foldrWithNeed action@(CallKernel name usedBuffers writtenBuffers) (acc, need) =
+    foldrWithNeed action@(CallKernel _ usedBuffers writtenBuffers) (acc, need) =
       let neededBufs = union need $ fromList usedBuffers
        in ((action, need) : acc, difference neededBufs (fromList writtenBuffers))
-    foldrWithNeed action@(CallReducerKernel name usedBuffers writtenBuffer) (acc, need) =
+    foldrWithNeed action@(CallAssocReducerKernel _ _ usedBuffers writtenBuffer) (acc, need) =
+      let neededBufs = union need $ fromList usedBuffers
+       in ((action, need) : acc, difference neededBufs (singleton writtenBuffer))
+    foldrWithNeed action@(CallReducerKernel _ usedBuffers writtenBuffer) (acc, need) =
       let neededBufs = union need $ fromList usedBuffers
        in ((action, need) : acc, difference neededBufs (singleton writtenBuffer))
     foldrWithNeed action (acc, need) = ((action, need) : acc, need)
@@ -80,6 +83,12 @@ flattenBuffers actions = assignBuffers actionsAndNeed
     translate m (CallReducerKernel name usedBuffers writtenBuffer) =
       CallReducerKernel
         name
+        (map (justLookup m) usedBuffers)
+        (justLookup m writtenBuffer)
+    translate m (CallAssocReducerKernel name1 name2 usedBuffers writtenBuffer) =
+      CallAssocReducerKernel
+        name1
+        name2
         (map (justLookup m) usedBuffers)
         (justLookup m writtenBuffer)
     translate m (CallKernel name usedBuffers writtenBuffers) =

@@ -629,12 +629,12 @@ spec = do
       it "plans a simple-mapper-reducer.t program correcty" $ do
         bptp <- readProgTyped "demo/simple-mapper-reducer.t"
         tail (makePlan bptp)
-          `shouldBe` [ AllocBuffer (ReservedBuffer (GPUBufferName 1) (GaiwanBuf (GaiwanBufSize 63 0 1) GaiwanInt)),
-                       AllocBuffer (ReservedBuffer (GPUBufferName 2) (GaiwanBuf (GaiwanBufSize 63 0 1) GaiwanInt)),
+          `shouldBe` [ AllocBuffer (ReservedBuffer (GPUBufferName 1) (GaiwanBuf (GaiwanBufSize 63 1 0) GaiwanInt)),
+                       AllocBuffer (ReservedBuffer (GPUBufferName 2) (GaiwanBuf (GaiwanBufSize 63 1 0) GaiwanInt)),
                        ReadBuffer "a" (ReservedBuffer (GPUBufferName 0) (GaiwanBuf (GaiwanBufSize 63 1 0) GaiwanInt)),
-                       CallAssocReducerKernel (KernelName "kernel0") (KernelName "kernel1") [ReservedBuffer (GPUBufferName 0) (GaiwanBuf (GaiwanBufSize 63 1 0) GaiwanInt)] (ReservedBuffer (GPUBufferName 1) (GaiwanBuf (GaiwanBufSize 63 0 1) GaiwanInt)),
-                       CallKernel (KernelName "kernel2") [ReservedBuffer (GPUBufferName 1) (GaiwanBuf (GaiwanBufSize 63 0 1) GaiwanInt)] [ReservedBuffer (GPUBufferName 2) (GaiwanBuf (GaiwanBufSize 63 0 1) GaiwanInt)],
-                       OutputBuffer [ReservedBuffer (GPUBufferName 2) (GaiwanBuf (GaiwanBufSize 63 0 1) GaiwanInt)]
+                       CallAssocReducerKernel (KernelName "kernel0") (KernelName "kernel1") [ReservedBuffer (GPUBufferName 0) (GaiwanBuf (GaiwanBufSize 63 1 0) GaiwanInt)] (ReservedBuffer (GPUBufferName 1) (GaiwanBuf (GaiwanBufSize 63 1 0) GaiwanInt)),
+                       CallKernel (KernelName "kernel2") [ReservedBuffer (GPUBufferName 1) (GaiwanBuf (GaiwanBufSize 63 1 0) GaiwanInt)] [ReservedBuffer (GPUBufferName 2) (GaiwanBuf (GaiwanBufSize 63 1 0) GaiwanInt)],
+                       OutputBuffer [ReservedBuffer (GPUBufferName 2) (GaiwanBuf (GaiwanBufSize 63 1 0) GaiwanInt)]
                      ]
 
 isTFile :: FilePath -> Bool

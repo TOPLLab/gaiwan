@@ -70,16 +70,16 @@ spec =
     it "Transforms a assoc reducer program" $ do
       Right (v, defines) <- convertPlan assocReducerDemoPlan
       skipReadbuffers v
-        `shouldBe` ( [ AllocBuffer (CLGPUBuffer 1 8),
+        `shouldBe` ( [ AllocBuffer (CLGPUBuffer 1 1),
                        AllocBuffer (CLGPUBuffer 2 1),
                        MakeKernel "Read a buffer" [CLGPUBuffer 0 16] (Range 0 0 0),
-                       MakeKernel "kernel0_REDUCER" [CLGPUBuffer 0 16, CLGPUBuffer 1 8] (Range 8 0 0),
-                       MakeKernel "kernel1_REDUCER" [CLGPUBuffer 1 8] (Range 4 0 0),
-                       MakeKernel "kernel1_REDUCER" [CLGPUBuffer 1 8] (Range 2 0 0),
-                       MakeKernel "kernel2" [CLGPUBuffer 1 8, CLGPUBuffer 2 1] (Range 1 0 0),
+                       MakeKernel "kernel0_REDUCER" [CLGPUBuffer 0 16, CLGPUBuffer 1 1] (Range 8 0 0),
+                       MakeKernel "kernel1_REDUCER" [CLGPUBuffer 1 1] (Range 4 0 0),
+                       MakeKernel "kernel1_REDUCER" [CLGPUBuffer 1 1] (Range 2 0 0),
+                       MakeKernel "kernel2" [CLGPUBuffer 1 1, CLGPUBuffer 2 1] (Range 1 0 0),
                        ExtractBuffer (CLGPUBuffer 2 1),
                        FreeBuffer (CLGPUBuffer 0 16),
-                       FreeBuffer (CLGPUBuffer 1 8),
+                       FreeBuffer (CLGPUBuffer 1 1),
                        FreeBuffer (CLGPUBuffer 2 1),
                        Release
                      ] ::

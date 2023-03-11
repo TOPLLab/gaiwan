@@ -1,7 +1,5 @@
 {-# LANGUAGE RankNTypes #-}
 
-
-
 module CodeGen.Pipelining (prepare, makePlan) where
 
 -- The idea is to transform a list of shuffles and maps into a list of maps (containing array)
@@ -48,14 +46,28 @@ toKernel (PipelineStep results) = do
   addHostCode $ CallKernel fName argBufs outBuf
   return outBuf
 
-toReduceKernel :: GaiwanBuf Int -> Exp -> BExp -> TmpCode ReservedBuffer
-toReduceKernel toT init_value exp = do
-  let argBufs = Set.toList $ getBuffers [exp] -- only one
+-- TODO: use init!
+toReduceKernel :: GaiwanBuf Int -> GaiwanBuf Int -> Exp -> BExp -> TmpCode ReservedBuffer
+toReduceKernel fromT toT init_value exp = do
+  let argBufs = Set.toList $ getBuffers [exp] -- only one input expression
   outBuf <- freshGPUBuffer toT -- lenght 1
   fName <- addDeviceReducerKernel mkCode reducerKernelTemplate exp argBufs outBuf
   addHostCode $ CallReducerKernel fName argBufs outBuf
   return outBuf
-toReduceKernel _ _ _ = error "incorrect call"
+toReduceKernel _ _ _ _ = error "incorrect call"
+
+toAssocReduceKernel :: GaiwanBuf Int -> GaiwanBuf Int -> Exp -> BExp -> BExp -> TmpCode ReservedBuffer
+toAssocReduceKernel (GaiwanBuf inSize _) (GaiwanBuf outSize outType) init_value exp1 exp2 =
+    do
+  let argBufs = Set.toList $ getBuffers [exp1] -- only one input bufffer
+  outBuf <- freshGPUBuffer $ GaiwanBuf (halfBufSize inSize) outType
+  (fName1, fName2) <- addDeviceAssocReducerKernel mkCode assocReducerKernelTemplate exp1 exp2 argBufs outBuf
+  addHostCode $ CallAssocReducerKernel fName1 fName2 argBufs outBuf
+  return outBuf
+toAssocReduceKernel _ _ _ _ _ = error "incorrect call"
+
+halfBufSize :: GaiwanBufSize Int -> GaiwanBufSize Int
+halfBufSize (GaiwanBufSize n i j) = GaiwanBufSize n i j
 
 gpuBufferSize :: ReservedBuffer -> GaiwanBufSize Int
 gpuBufferSize (ReservedBuffer _ (GaiwanBuf gbs _)) = gbs
@@ -150,8 +162,9 @@ traceThis x a = a
 -- TODO check for duplicates argument names in typing
 processApplication :: PlanData -> TypedTransform -> TmpCode PlanData
 -- Shaper applied to quite simple inputs ⇒ Do substitution of A[x] -> f_A(x)
-processApplication (PipelineStep inputs) (TShaper (GTransformType contraints fromT [toT]) name (iname : bufferArgs) exp) | length inputs == length bufferArgs && quiteSimple inputs =
-  return $ PipelineStep [(toT, foldr f (substByTheI iname (toBExp exp)) (zip bufferArgs inputs))]
+processApplication (PipelineStep inputs) (TShaper (GTransformType contraints fromT [toT]) name (iname : bufferArgs) exp)
+  | length inputs == length bufferArgs && quiteSimple inputs =
+      return $ PipelineStep [(toT, foldr f (substByTheI iname (toBExp exp)) (zip bufferArgs inputs))]
   where
     f (argName, (_, buf)) expy = traceThis "substArrrayGet ->" $ substArrayGet argName (g buf) (traceThis "Input to subst =>" expy)
 
@@ -166,22 +179,63 @@ processApplication complex@(PipelineStep inputs) task@(TShaper (GTransformType c
 -- Mapper applied to data => Do substitution
 processApplication (PipelineStep [(_, input)]) (TMapper (GTransformType _ [fromT] [toT]) name [iname, dname] exp) =
   return $ PipelineStep [(toT, simpleSubstMult [((iname, False), theI), ((dname, False), input)] (toBExp exp))]
-
 -- Reducer applied to data => Call reducing kernel
+processApplication complex@(PipelineStep [(_, input)]) (TReducer (GTransformType _ [fromT] [toT]) name [var_i, var_acc, var_value] init exp) | isAssocExp (var_acc, False) (var_value, False) exp = do
+  resBuffer <-
+    toAssocReduceKernel
+      fromT
+      toT
+      init
+      ( -- first stage
+        simpleSubstMult [((var_i, False), error "no i allowed"), ((var_acc, False), Var "acc" True), ((var_value, False), input)] $
+          toBExp exp
+      )
+      ( -- second stage combine 2 values
+        simpleSubstMult [((var_i, False), error "no i allowed"), ((var_acc, False), Var "v1" True), ((var_value, False), Var "v2" True)] $
+          toBExp exp
+      )
+  return $ PipelineStep [readToAccess resBuffer]
 processApplication complex@(PipelineStep [(_, input)]) (TReducer (GTransformType _ [fromT] [toT]) name [var_i, var_acc, var_value] init exp) = do
-  resBuffer <- toReduceKernel toT init $ simpleSubstMult [((var_i, False), theI), ((var_acc, False), Var "acc" True), ((var_value, False), input)] $ toBExp exp
+  resBuffer <-
+    toReduceKernel fromT toT init $
+      simpleSubstMult [((var_i, False), theI), ((var_acc, False), Var "acc" True), ((var_value, False), input)] $
+        toBExp exp
   return $ PipelineStep [readToAccess resBuffer]
 processApplication _ a = error $ show a -- TODO: handle reducer
+
+-- Try to check if an operator is associative
+isAssocExp :: (String, Bool) -> (String, Bool) -> Exp -> Bool
+isAssocExp a b exp = leftFirst == rightFirst
+  where
+    leftFirst = assocToLeft $ simpleSubstMult [(a, leftFirstInner), (b, Var "c" True)] $ toBExp exp
+    leftFirstInner = simpleSubstMult [(a, Var "a" True), (b, Var "b" True)] $ toBExp exp
+    rightFirst = assocToLeft $ simpleSubstMult [(a, Var "a" True), (b, rightFirstInner)] $ toBExp exp
+    rightFirstInner = simpleSubstMult [(a, Var "b" True), (b, Var "c" True)] $ toBExp exp
+
+-- Try to move associative operators to the left
+assocToLeft = fix (simplifyExp . mapExp assocSubst)
+  where
+    assocSubst :: BExp -> Maybe BExp
+    assocSubst (Plus ge (Plus ge2 ge3)) = Just $ Plus (Plus ge ge2) ge3
+    assocSubst (Plus ge (Minus ge2 ge3)) = Just $ Plus (Plus ge ge2) (Negate ge3)
+    assocSubst (Minus ge ge') = Just $ Plus ge (Negate ge')
+    assocSubst (Times ge (Times ge2 ge3)) = Just $ Times (Times ge ge2) ge3
+    assocSubst (Times ge (Div ge2 ge3)) = Just $ Div (Times ge ge2) ge3
+    assocSubst (Div ge (Div ge2 ge3)) = Just $ Div (Times ge ge3) ge2
+    assocSubst e = Nothing
+
+-- Simple fixpoint
+fix f x = let x' = f x in if x == x' then x else fix f x'
 
 quiteSimple :: [(GaiwanBuf Int, BExp)] -> Bool
 quiteSimple s
   | all
-        ( \(GaiwanBuf _ t, _) -> case t of
-            GaiwanInt -> False
-            (GaiwanTuple gss) -> True
-            (TVar any) -> error "Cannot handle this yet..."
-        )
-        s =
+      ( \(GaiwanBuf _ t, _) -> case t of
+          GaiwanInt -> False
+          (GaiwanTuple gss) -> True
+          (TVar any) -> error "Cannot handle this yet..."
+      )
+      s =
       True
 quiteSimple input = sum (map (complexity . snd) input) < 40
 

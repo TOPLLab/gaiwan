@@ -77,43 +77,55 @@ reducerKernelTemplate name [buffer@(ReservedBuffer _ gb@(GaiwanBuf _ GaiwanInt))
   mkKernelShell name [buffer, bufferout] $
     "if(0==get_global_id(0)){\n"
       ++ " int int_acc = 0;\n" -- TODO use actual init acc
-      ++ "for(int int_i = 0 ;int_i < "
-      ++ lenDefineName gb
-      ++ ";int_i++){\n"
-      ++ fst code
-      ++ "int_acc = "
-      ++ snd code
-      ++ ";\n" -- update accumulator
+      ++ "for(int int_i = 0 ;int_i < " ++ lenDefineName gb ++ ";int_i++){\n"
+      ++ variableAssign "int_acc" code -- update accumulator
       ++ "}\n"
-      ++ (gpuBufferAssign "0") bufferout ("", "int_acc") -- write to pos 0
+      ++ gpuBufferAssign "0" bufferout ("", "int_acc") -- write to pos 0
       ++ "\n}\n"
 reducerKernelTemplate _ _ _ _ = error "Illegal nubmer of buffers"
 
--- TODO change to phase 2: take every two items upto len (<- extra argument) and combine, write to lowest of 2 index
--- Repeat for only even positions (extra arg: 1, 2, 4, 8, 16, ...)
--- TODO: Make this actually do what was asked instead of sum
--- TODO check right lenght?
-kernelSum :: KernelName -> [ReservedBuffer] -> [ReservedBuffer] -> String
-kernelSum (KernelName name) [inbuf@(ReservedBuffer _ buffer@(GaiwanBuf _ GaiwanInt))] [buffersout] =
-  "void kernel "
-    ++ name
-    ++ "(int stepsize, "
-    ++ gpuBufferDecl inbuf
-    ++ "){"
-    ++ " int int_i = (2*get_global_id(0))*stepsize;\n"
-    ++ "if(int_i + stepsize < "
-    ++ lenDefineName buffer
-    ++ "){"
-    ++ gpuBufferArgName buffersout
-    ++ "[int_i] = "
-    ++ gpuBufferArgName buffersout
-    ++ "[int_i]+"
-    ++ gpuBufferArgName buffersout
-    ++ "[int_i+stepsize];"
-    ++ "}}"
+-- TODO: use bufferout to type accumulator and initial value
+assocReducerKernelTemplate ::
+  KernelName ->
+  KernelName ->
+  [ReservedBuffer] ->
+  ReservedBuffer ->
+  (String, String) -> -- code
+  (String, String) -> -- combination code
+  String
+assocReducerKernelTemplate
+  name1
+  (KernelName name2str)
+  [buffer@(ReservedBuffer _ gb@(GaiwanBuf _ GaiwanInt))]
+  bufferout@(ReservedBuffer _ goutb@(GaiwanBuf _ GaiwanInt))
+  codeValue
+  codeAcc = firstStage ++ secondStage
+    where
+      accType = "int"
+      -- First stage: 2n->n
+      firstStage =
+        mkKernelShell name1 [buffer, bufferout] $
+          " int int_i = 2*get_global_id(0);\n"
+            ++ accType ++ " int_acc = 0;\n" -- TODO use actual init acc
+            ++ variableAssign "int_acc" codeValue -- update accumulator
+            ++ "\nint_i++;\n" -- == 2*get_global_id(0) + 1
+            ++ "if(int_i < " ++ lenDefineName goutb ++ "){"
+            ++ variableAssign "int_acc" codeValue -- update accumulator
+            ++ gpuBufferAssign "get_global_id(0)" bufferout ("","int_acc") -- write to pos int_i
+            ++ "\n}\n"
+      secondStage =
+        "void kernel " ++ name2str ++ "(int stepsize, " ++ gpuBufferDecl bufferout ++ "){\n"
+          ++ "int int_i = (2*get_global_id(0))*stepsize;\n"
+          ++ "if(int_i + stepsize < " ++ lenDefineName goutb ++ "){\n"
+          ++ accType ++ " int_v1 = " ++ gpuBufferArgName bufferout ++ "[int_i];\n"
+          ++ accType ++ " int_v2 = " ++ gpuBufferArgName bufferout ++ "[int_i+stepsize];\n"
+          ++ gpuBufferAssign "int_i" bufferout codeAcc -- write to pos int_i
+          ++ "\n}\n"
+          ++ "}\n"
+assocReducerKernelTemplate _ _ _ _ _ _ = error "TODO"
 
 mkKernelShell :: KernelName -> [ReservedBuffer] -> String -> String
-mkKernelShell (KernelName name) args code = "void kernel " ++ name ++ "(" ++ argsStr ++ ")" ++ "{ \n" ++ code ++ " \n};"
+mkKernelShell (KernelName name) args code = "void kernel " ++ name ++ "(" ++ argsStr ++ ")" ++ "{ \n" ++ code ++ " \n};\n"
   where
     argsStr = intercalate ", " (map gpuBufferDecl args)
 
@@ -129,7 +141,10 @@ gpuBufferVar (ReservedBuffer (GPUBufferName name) _) = Var ("array" ++ show name
 gpuBufferArgName b@(ReservedBuffer (GPUBufferName name) _) = "int_array" ++ show name
 
 gpuBufferAssign :: String -> ReservedBuffer -> (String, String) -> String
-gpuBufferAssign index buffer (letBinds, value) = "{" ++ letBinds ++ "\n" ++ gpuBufferArgName buffer ++ "[" ++ index ++ "] = " ++ value ++ ";}"
+gpuBufferAssign index buffer = variableAssign (gpuBufferArgName buffer ++ "[" ++ index ++ "]")
+
+variableAssign name ("", value) = name ++ " = " ++ value ++ ";\n"
+variableAssign name (letBinds, value) = "{" ++ letBinds ++ "\n" ++ name ++ " = " ++ value ++ ";\n};"
 
 -- Add brackets
 mkCodeB :: BExp -> CSCode String
