@@ -58,12 +58,12 @@ toReduceKernel _ _ _ _ = error "incorrect call"
 
 toAssocReduceKernel :: GaiwanBuf Int -> GaiwanBuf Int -> Exp -> BExp -> BExp -> TmpCode ReservedBuffer
 toAssocReduceKernel (GaiwanBuf inSize _) (GaiwanBuf outSize outType) init_value exp1 exp2 =
-    do
-  let argBufs = Set.toList $ getBuffers [exp1] -- only one input bufffer
-  outBuf <- freshGPUBuffer $ GaiwanBuf (oneElBufSize inSize) outType
-  (fName1, fName2) <- addDeviceAssocReducerKernel mkCode assocReducerKernelTemplate exp1 exp2 argBufs outBuf
-  addHostCode $ CallAssocReducerKernel fName1 fName2 argBufs outBuf
-  return outBuf
+  do
+    let argBufs = Set.toList $ getBuffers [exp1] -- only one input bufffer
+    outBuf <- freshGPUBuffer $ GaiwanBuf (oneElBufSize inSize) outType
+    (fName1, fName2) <- addDeviceAssocReducerKernel mkCode assocReducerKernelTemplate exp1 exp2 argBufs outBuf
+    addHostCode $ CallAssocReducerKernel fName1 fName2 argBufs outBuf
+    return outBuf
 toAssocReduceKernel _ _ _ _ _ = error "incorrect call"
 
 oneElBufSize :: GaiwanBufSize Int -> GaiwanBufSize Int

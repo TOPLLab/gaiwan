@@ -77,7 +77,9 @@ reducerKernelTemplate name [buffer@(ReservedBuffer _ gb@(GaiwanBuf _ GaiwanInt))
   mkKernelShell name [buffer, bufferout] $
     "if(0==get_global_id(0)){\n"
       ++ " int int_acc = 0;\n" -- TODO use actual init acc
-      ++ "for(int int_i = 0 ;int_i < " ++ lenDefineName gb ++ ";int_i++){\n"
+      ++ "for(int int_i = 0 ;int_i < "
+      ++ lenDefineName gb
+      ++ ";int_i++){\n"
       ++ variableAssign "int_acc" code -- update accumulator
       ++ "}\n"
       ++ gpuBufferAssign "0" bufferout ("", "int_acc") -- write to pos 0
@@ -95,39 +97,63 @@ assocReducerKernelTemplate ::
   String
 assocReducerKernelTemplate
   name1
-  (KernelName name2str)
+  name2
   [buffer@(ReservedBuffer _ gb@(GaiwanBuf _ GaiwanInt))]
   bufferout@(ReservedBuffer _ goutb@(GaiwanBuf _ GaiwanInt))
   codeValue
   codeAcc = firstStage ++ secondStage
     where
       accType = "int"
+      intermediateVar = "intermediate"
+      intermediateArg = "global " ++ accType ++ "* " ++ intermediateVar
+      intermediateLenArg = "global uint* " ++ intermediateLenVar
+      intermediateLenVar = "intermediateLEN"
       -- First stage: 2n->n
       firstStage =
-        mkKernelShell name1 [buffer, bufferout] $
+        mkCustomKernelShell name1 [gpuBufferDecl buffer, intermediateLenArg, intermediateArg] $
           " int int_i = 2*get_global_id(0);\n"
-            ++ accType ++ " int_acc = 0;\n" -- TODO use actual init acc
+            ++ accType
+            ++ " int_acc = 0;\n" -- TODO use actual init acc
             ++ variableAssign "int_acc" codeValue -- update accumulator
             ++ "\nint_i++;\n" -- == 2*get_global_id(0) + 1
-            ++ "if(int_i < " ++ lenDefineName goutb ++ "){"
+            ++ "if(int_i < *"
+            ++ intermediateLenVar
+            ++ "){"
             ++ variableAssign "int_acc" codeValue -- update accumulator
-            ++ gpuBufferAssign "get_global_id(0)" bufferout ("","int_acc") -- write to pos int_i
+            ++ variableAssign (intermediateVar++"[get_global_id(0)]") ("", "int_acc") -- write to pos int_i
             ++ "\n}\n"
       secondStage =
-        "void kernel " ++ name2str ++ "(int stepsize, " ++ gpuBufferDecl bufferout ++ "){\n"
-          ++ "int int_i = (2*get_global_id(0))*stepsize;\n"
-          ++ "if(int_i + stepsize < " ++ lenDefineName goutb ++ "){\n"
-          ++ accType ++ " int_v1 = " ++ gpuBufferArgName bufferout ++ "[int_i];\n"
-          ++ accType ++ " int_v2 = " ++ gpuBufferArgName bufferout ++ "[int_i+stepsize];\n"
-          ++ gpuBufferAssign "int_i" bufferout codeAcc -- write to pos int_i
-          ++ "\n}\n"
-          ++ "}\n"
+        mkCustomKernelShell name2 [gpuBufferDecl bufferout, "global uint* stepsizePtr", intermediateLenArg, intermediateArg] $
+          "int stepsize = *stepsizePtr;"
+            ++ "int int_i = (2*get_global_id(0))*stepsize;\n"
+            ++ "if(int_i + stepsize < *"
+            ++ intermediateLenVar
+            ++ "){\n"
+            ++ accType
+            ++ " int_v1 = "
+            ++ gpuBufferArgName bufferout
+            ++ "[int_i];\n"
+            ++ accType
+            ++ " int_v2 = "
+            ++ gpuBufferArgName bufferout
+            ++ "[int_i+stepsize];\n"
+            ++ accType
+            ++ " int_acc; "
+            ++ variableAssign "int_acc" codeAcc -- update accumulator
+            ++ variableAssign "intermediate[int_i]" ("", "int_acc") -- update accumulator
+            ++ "\nif(int_i==0){"
+            ++ gpuBufferAssign "int_i" bufferout ("", "int_acc") -- write to pos int_i
+            ++ "}\n"
+            ++ "}\n"
 assocReducerKernelTemplate _ _ _ _ _ _ = error "TODO"
 
 mkKernelShell :: KernelName -> [ReservedBuffer] -> String -> String
-mkKernelShell (KernelName name) args code = "void kernel " ++ name ++ "(" ++ argsStr ++ ")" ++ "{ \n" ++ code ++ " \n};\n"
+mkKernelShell name args = mkCustomKernelShell name (map gpuBufferDecl args)
+
+mkCustomKernelShell :: KernelName -> [String] -> String -> String
+mkCustomKernelShell (KernelName name) args code = "void kernel " ++ name ++ "(" ++ argsStr ++ ")" ++ "{ \n" ++ code ++ " \n};\n"
   where
-    argsStr = intercalate ", " (map gpuBufferDecl args)
+    argsStr = intercalate ", " args
 
 -- TODO: size is wrong here, but we do not know it yet, maybe use defines?
 gpuBufferDecl gpub@(ReservedBuffer _ buffer@(GaiwanBuf (GaiwanBufSize id a b) _)) =
