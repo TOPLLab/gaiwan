@@ -236,11 +236,12 @@ runAction d (MakeReducerKernel phase1Kernel phase2Kernel inputBuffers resultBuff
   interBuffer <- clCreateBuffer (context d) [CL_MEM_READ_WRITE] (vecSize, nullPtr)
 
   phaseOneSizePtr <- castPtr <$> newArray [asCLuint phaseOneSize]
-  interBufferSize <- clCreateBuffer (context d) [CL_MEM_READ_WRITE] (sizeOf (0 :: CLuint), phaseOneSizePtr)
+  interBufferSize <- clCreateBuffer (context d) [CL_MEM_READ_WRITE, CL_MEM_COPY_HOST_PTR] (sizeOf (0 :: CLuint), phaseOneSizePtr)
 
   -- kernel1(global int int_array0[LEN_63_1_0], global uint* intermediateLEN, global int* intermediate)
   kernel1 <- clCreateKernel (program d) phase1Kernel
   zipWithM_ (\i n -> clSetKernelArgSto kernel1 i $ getGpuBuffer d n) [0 ..] inputBuffers
+
   clSetKernelArgSto kernel1 (lengthCLuint inputBuffers) interBufferSize
   clSetKernelArgSto kernel1 (lengthCLuint inputBuffers + 1) interBuffer
 
@@ -248,20 +249,23 @@ runAction d (MakeReducerKernel phase1Kernel phase2Kernel inputBuffers resultBuff
   clReleaseKernel kernel1
 
   stepSizePtr <- castPtr <$> newArray [asCLuint 1]
-  stepSizeBuffer <- clCreateBuffer (context d) [CL_MEM_READ_WRITE] (sizeOf (0 :: CLuint), stepSizePtr)
+  stepSizeBuffer <- clCreateBuffer (context d) [CL_MEM_READ_WRITE, CL_MEM_COPY_HOST_PTR] (sizeOf (0 :: CLuint), stepSizePtr)
   -- kernel2(global int int_array1[LEN_63_0_1], global uint* stepsizePtr, global uint* intermediateLEN, global int* intermediate)
   kernel2 <- clCreateKernel (program d) phase2Kernel
-  clSetKernelArgSto kernel2 0 $ getGpuBuffer d resultBuffer -- global int int_array1[1]
-  clSetKernelArgSto kernel2 1 stepSizeBuffer --
-  clSetKernelArgSto kernel2 2 interBufferSize -- global uint* intermediateLEN
-  clSetKernelArgSto kernel2 3 interBuffer --  global int* intermediate
-  -- TODO check if still writing to outbuf
+
   evt2 <-
     enqueuRec
       ( \s step evt -> do
           stepSizePtr <- castPtr <$> newArray [step]
-          evtArg <- clEnqueueWriteBuffer (queue d) stepSizeBuffer True 0 0 stepSizePtr [evt]
-          clEnqueueNDRangeKernel (queue d) kernel2 (rangeArr (Range s 0 0)) [] [evtArg]
+          stepSizeBuffer <- clCreateBuffer (context d) [CL_MEM_READ_WRITE, CL_MEM_COPY_HOST_PTR] (sizeOf (0 :: CLuint), stepSizePtr)
+
+          -- kernel2(global int int_array1[LEN_63_0_1], global uint* stepsizePtr, global uint* intermediateLEN, global int* intermediate)
+          kernel2 <- clCreateKernel (program d) phase2Kernel
+          clSetKernelArgSto kernel2 0 $ getGpuBuffer d resultBuffer -- global int int_array1[1]
+          clSetKernelArgSto kernel2 1 stepSizeBuffer --
+          clSetKernelArgSto kernel2 2 interBufferSize -- global uint* intermediateLEN
+          clSetKernelArgSto kernel2 3 interBuffer --  global int* intermediate
+          clEnqueueNDRangeKernel (queue d) kernel2 (rangeArr (Range s 0 0)) [] [evt]
       )
       phaseOneSize
       1
@@ -273,7 +277,7 @@ runAction d (MakeReducerKernel phase1Kernel phase2Kernel inputBuffers resultBuff
   where
     halfSize x = x `div` 2 + x `rem` 2
     enqueuRec :: (Int -> CLuint -> CLEvent -> IO CLEvent) -> Int -> CLuint -> CLEvent -> IO CLEvent
-    enqueuRec _ prevSize _ waitEvt | prevSize <= 2 = return waitEvt
+    enqueuRec _ prevSize _ waitEvt | prevSize <= 1 = return waitEvt
     enqueuRec startKernel prevSize stepSize waitEvt = do
       let newSize = halfSize prevSize
       nextEvt <- startKernel newSize stepSize waitEvt

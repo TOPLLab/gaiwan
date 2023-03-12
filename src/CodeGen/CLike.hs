@@ -121,7 +121,7 @@ assocReducerKernelTemplate
             ++ "){"
             ++ variableAssign "int_acc" codeValue -- update accumulator
             ++ "\n}\n"
-            ++ variableAssign (intermediateVar++"[get_global_id(0)]") ("", "int_acc") -- write to pos int_i
+            ++ variableAssign (intermediateVar ++ "[get_global_id(0)]") ("", "int_acc") -- write to pos int_i
       secondStage =
         mkCustomKernelShell name2 [gpuBufferDecl bufferout, "global uint* stepsizePtr", intermediateLenArg, intermediateArg] $
           "int stepsize = *stepsizePtr;"
