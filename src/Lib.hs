@@ -92,7 +92,9 @@ convertPrepared code actions = do
       OpenCL.run runner ocactions
 
 convertor :: Int -> Ptr CInt -> IO [Integer]
-convertor size ptr = map toInteger <$> mapM (peekElemOff ptr) ([0 .. (min size 100) - 1] ++ ([size - 2, size - 1]))
+convertor size ptr = map toInteger <$> mapM (peekElemOff ptr) sizeRange
+  where
+    sizeRange = if size > 100 then [0 .. 100] ++ [size - 2, size - 1] else [0 .. size - 1]
 
 -- runOpenCL $ mkCode program
 
