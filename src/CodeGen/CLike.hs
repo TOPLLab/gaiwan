@@ -116,12 +116,12 @@ assocReducerKernelTemplate
             ++ " int_acc = 0;\n" -- TODO use actual init acc
             ++ variableAssign "int_acc" codeValue -- update accumulator
             ++ "\nint_i++;\n" -- == 2*get_global_id(0) + 1
-            ++ "if(int_i < *"
-            ++ intermediateLenVar
+            ++ "if(int_i < "
+            ++ lenDefineName gb
             ++ "){"
             ++ variableAssign "int_acc" codeValue -- update accumulator
-            ++ variableAssign (intermediateVar++"[get_global_id(0)]") ("", "int_acc") -- write to pos int_i
             ++ "\n}\n"
+            ++ variableAssign (intermediateVar++"[get_global_id(0)]") ("", "int_acc") -- write to pos int_i
       secondStage =
         mkCustomKernelShell name2 [gpuBufferDecl bufferout, "global uint* stepsizePtr", intermediateLenArg, intermediateArg] $
           "int stepsize = *stepsizePtr;"
@@ -131,11 +131,11 @@ assocReducerKernelTemplate
             ++ "){\n"
             ++ accType
             ++ " int_v1 = "
-            ++ gpuBufferArgName bufferout
+            ++ intermediateVar
             ++ "[int_i];\n"
             ++ accType
             ++ " int_v2 = "
-            ++ gpuBufferArgName bufferout
+            ++ intermediateVar
             ++ "[int_i+stepsize];\n"
             ++ accType
             ++ " int_acc; "
