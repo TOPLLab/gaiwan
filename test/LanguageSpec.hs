@@ -51,6 +51,10 @@ spec = do
       toTypedSmtSimple (Abstraction Nothing "nameOfAShaper" [] [Shaper (Just (ABuf (GaiwanBuf n GaiwanInt))) "nameOFaMapper" [("i", Nothing), ("v", Just (ABuf (GaiwanBuf n GaiwanInt)))] (ArrayGet v (Var "i" False))])
         `shouldBe` Right (TAbstraction (GaiwanArrow [] (GTransformType M.empty [GaiwanBuf (GaiwanBufSize 0 1 0) GaiwanInt] [GaiwanBuf (GaiwanBufSize 0 1 0) GaiwanInt])) "nameOfAShaper" [] [TShaper (GTransformType M.empty [GaiwanBuf (GaiwanBufSize 0 1 0) GaiwanInt] [GaiwanBuf (GaiwanBufSize 0 1 0) GaiwanInt]) "nameOFaMapper" ["i", "v"] (ArrayGet (Var "v" False) (Var "i" False))])
 
+    it "types a simple shaper with 2 args" $
+      toTypedSmtSimple (Abstraction Nothing "nameOfAShaper" [] [Shaper (Just (ABuf (GaiwanBuf n GaiwanInt))) "nameOFaMapper" [("i", Nothing), ("v", Just (ABuf (GaiwanBuf n GaiwanInt))), ("unused", Just (ABuf (GaiwanBuf n GaiwanInt)))] (ArrayGet v (Var "i" False))])
+        `shouldBe` Right (TAbstraction (GaiwanArrow [] (GTransformType (M.fromList []) [GaiwanBuf (GaiwanBufSize 0 1 0) GaiwanInt,GaiwanBuf (GaiwanBufSize 0 1 0) GaiwanInt] [GaiwanBuf (GaiwanBufSize 0 1 0) GaiwanInt])) "nameOfAShaper" [] [TShaper (GTransformType (M.fromList []) [GaiwanBuf (GaiwanBufSize 0 1 0) GaiwanInt,GaiwanBuf (GaiwanBufSize 0 1 0) GaiwanInt] [GaiwanBuf (GaiwanBufSize 0 1 0) GaiwanInt]) "nameOFaMapper" ["i","v","unused"] (ArrayGet (Var "v" False) (Var "i" False))])
+
     it "types a simple reducer " $
       toTypedSmtSimple (Abstraction Nothing "yolo" [] [Reducer (Just (ABuf (GaiwanBuf (GaiwanBufSize "n" 0 1) GaiwanInt))) "nameOFaMapper" [("i", Nothing), ("acc", Nothing), ("v", Just (AShape GaiwanInt))] (Int 5) (Plus (Var "acc" False) v)])
         `shouldBe` Right (TAbstraction (GaiwanArrow [] (GTransformType M.empty [GaiwanBuf (GaiwanBufSize 1 1 0) GaiwanInt] [GaiwanBuf (GaiwanBufSize 1 0 1) GaiwanInt])) "yolo" [] [TReducer (GTransformType M.empty [GaiwanBuf (GaiwanBufSize 1 1 0) GaiwanInt] [GaiwanBuf (GaiwanBufSize 1 0 1) GaiwanInt]) "nameOFaMapper" ["i", "acc", "v"] (Int 5) (Plus (Var "acc" False) (Var "v" False))])

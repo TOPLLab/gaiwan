@@ -18,6 +18,7 @@ tokens :-
   mapper                           { ingest $ \s -> TokenFunction Mapper }
   shaper                           { ingest $ \s -> TokenFunction Shaper }
   return                           { ingest $ \s -> TokenReturn }
+  returnab                           { ingest $ \s -> TokenReturnAB }
   reducer                           { ingest $ \s -> TokenReducer }
   abstraction                           { ingest $ \s -> TokenAbstraction }
   if                               { ingest $ \s -> TokenIf }
@@ -43,6 +44,7 @@ data ReducerType = Reducer  deriving (Eq,Ord,Enum,Show)
 data Token =
   TokenFunction FunctionType    AlexPosn |
   TokenReturn           AlexPosn |
+  TokenReturnAB           AlexPosn |
   TokenAbstraction      AlexPosn |
   TokenReducer          AlexPosn |
   TokenIf               AlexPosn |

@@ -15,6 +15,7 @@ import           Language.GaiwanTypes
 %token
       function                                              { TokenFunction $$ _ }
       return                                                { TokenReturn _ }
+      returnab                                                { TokenReturnAB _ }
       reducer                                               { TokenReducer  _ }
       abstraction                                           { TokenAbstraction  _ }
       let                                                   { TokenLet      _ }
@@ -81,6 +82,7 @@ ExpKinds : ExpApp                                           { $1 :: Instr }
          | let var '=' bracO Exp bracC
            in bracO Exp bracC                               { (LetB $2 $5 $9) }
          | return var                                       { (Return [$2]) }
+         | returnab                                        { (Return ["a","b"]) }
 
 ExpApp :: { Instr }
 ExpApp : avar '(' explist ')'                               { mkApp $1 (reverse $3) }

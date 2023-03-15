@@ -539,10 +539,10 @@ checkExpected Nothing b = return b
 checkExpected (Just a) b | a == b = return b
 checkExpected (Just a) b = fail $ "Expected outtype does not match " ++ show a ++ " but got " ++ show b
 
-toShapeList :: [GBufOrShape a] -> TypeingOut [GShape a]
+toShapeList :: Show a => [GBufOrShape a] -> TypeingOut [GShape a]
 toShapeList ((AShape a) : r) = (a :) <$> toShapeList r
 toShapeList [] = return []
-toShapeList _ = fail "Not all shape"
+toShapeList x = fail $ "Not all shape" ++ show x
 
 typeOfBody :: EnvType -> Exp -> TypeingOut GBufOrShapeDefault
 typeOfBody env (Plus a b) = typeOfMathBinop env a b
