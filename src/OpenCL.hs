@@ -168,7 +168,6 @@ findBuf k = do
 
 mkOpenRunner :: (Int -> Ptr CInt -> IO a) -> String -> [(String, Int)] -> IO (OpenCLRunner a)
 mkOpenRunner convertor programSource extraDefines = do
-  putStrLn programSource
   -- Initialize OpenCL
   putStrLn "GOOOOOOO"
   (platform : _) <- clGetPlatformIDs
