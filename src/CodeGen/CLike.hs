@@ -98,7 +98,7 @@ assocReducerKernelTemplate ::
 assocReducerKernelTemplate
   name1
   name2
-  [buffer@(ReservedBuffer _ gb@(GaiwanBuf _ GaiwanInt))]
+  buffers@((ReservedBuffer _ gb):_)
   bufferout@(ReservedBuffer _ goutb@(GaiwanBuf _ GaiwanInt))
   codeValue
   codeAcc = firstStage ++ secondStage
@@ -110,7 +110,7 @@ assocReducerKernelTemplate
       intermediateLenVar = "intermediateLEN"
       -- First stage: 2n->n
       firstStage =
-        mkCustomKernelShell name1 [gpuBufferDecl buffer, intermediateLenArg, intermediateArg] $
+        mkCustomKernelShell name1 ((map gpuBufferDecl buffers) ++ [intermediateLenArg, intermediateArg]) $
           " int int_i = 2*get_global_id(0);\n"
             ++ accType
             ++ " int_acc = 0;\n" -- TODO use actual init acc

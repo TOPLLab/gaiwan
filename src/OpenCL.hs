@@ -129,7 +129,7 @@ convertS _ _ (Defs.CallReducerKernel (KernelName n) rbs outBuf) = do
   bufo <- findBuf outBuf
   return [MakeKernel n (bufs ++ [bufo]) (Range 1 0 0)] -- only one thread :(
 convertS _ _ (Defs.CallAssocReducerKernel (KernelName n1) (KernelName n2) rbs outBuf) = do
-  bufs@[CLGPUBuffer _ insize] <- mapM findBuf rbs
+  bufs@((CLGPUBuffer _ insize):_) <- mapM findBuf rbs
   bufo <- findBuf outBuf
   -- Number of in elements / 2 (rounded up)
   return [MakeReducerKernel n1 n2 bufs bufo insize]
@@ -168,6 +168,7 @@ findBuf k = do
 
 mkOpenRunner :: (Int -> Ptr CInt -> IO a) -> String -> [(String, Int)] -> IO (OpenCLRunner a)
 mkOpenRunner convertor programSource extraDefines = do
+  putStrLn programSource
   -- Initialize OpenCL
   putStrLn "GOOOOOOO"
   (platform : _) <- clGetPlatformIDs
